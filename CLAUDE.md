@@ -65,6 +65,24 @@ after every change.
   (`pytest.mark.skipif` on the env var) so CI stays green.
 - Small, focused commits. Don't refactor core modules while adding adapters.
 
+## Handoff protocol
+
+After completing any task, update `HANDOFF.md` in the repo root **before the
+final commit**. Append a dated entry containing:
+
+1. **What shipped** — with commit refs.
+2. **Findings** — especially real provider behaviour observed: what passed,
+   what failed, exact metrics from the actual run. Numbers, not impressions.
+3. **Decisions** — and why.
+4. **FOR STRATEGY** — open questions needing founder/advisor input. Flag them
+   explicitly; do not silently resolve a question that is not yours to close.
+5. **Next** — the next task per the roadmap.
+
+Entries stay factual and terse. **`HANDOFF.md` is public**: never include
+customer names, prospect details, credentials, account identifiers, or
+anything commercially sensitive. Provider behaviour measured from a public
+API is a benchmark finding and belongs here; who is evaluating it does not.
+
 ## Commands
 
 ```bash
