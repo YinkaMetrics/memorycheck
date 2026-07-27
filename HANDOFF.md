@@ -161,9 +161,10 @@ Founder rulings closing the FOR STRATEGY items from Task 1.
 
 ### FOR STRATEGY — draft disclosure note to Mem0 (NOT SENT)
 
-Status: **awaiting approval. Nothing has been sent, opened, or published to
-any Mem0 channel.** Per ruling 2, external actions wait for a ruling. Approve,
-edit, or discard.
+Status: **CLOSED 2026-07-27.** Resolved on the strategy side — the founder
+sends the updated 15-scenario version personally (public GitHub issue plus a
+Discord pointer). No action from the implementer; nothing was sent from here.
+Draft retained below as the record of what was proposed.
 
 Open questions on the draft: (a) which channel — GitHub issue on `mem0ai/mem0`
 vs a private note; (b) whether to link the public repo, which frames it as a
@@ -307,7 +308,23 @@ general retrieval noise.
   deciding whether a deliberate "store swallows a write" scenario belongs in
   the pack or stays out of scope.
 
-### 5. Next
+### 5. Next — updated by rulings below
+
+---
+
+## 2026-07-27 — Strategy rulings on Task 2
+
+1. **Disclosure closed.** Founder sends the updated 15-scenario version
+   personally (public GitHub issue + Discord pointer). Marked CLOSED above.
+2. **Pack frozen at 15.** When a pilot needs per-commit speed, split into
+   tiers — smoke (~5) per-commit, full pack nightly/release. Roadmap note
+   only; no work now.
+3. **No synthetic "store swallows a write" scenario.** `missing_current_fact`
+   earns its keep against real customer retrieval layers in pilots, not
+   against a fabricated failure. FOR STRATEGY item closed.
+4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
+
+### Superseded "Next" from Task 2
 
 Roadmap item 3 — Zep adapter, then LangGraph store adapter. Same shape as
 Mem0: lazy SDK import in an optional extra, credentials from an env var,

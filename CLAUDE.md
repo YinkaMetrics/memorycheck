@@ -127,6 +127,10 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
 3. Zep adapter, then LangGraph store adapter.
 4. LLM judge — only after the calibration protocol has been run.
 
+Pack size is frozen at 15 (ruling 2026-07-27). If a pilot needs per-commit
+speed, split into tiers — smoke (~5) per-commit, full pack nightly/release —
+rather than shrinking the pack.
+
 ## Out of scope — do not build
 
 Dashboards or hosted control planes; storing customer memory content;
