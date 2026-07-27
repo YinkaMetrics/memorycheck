@@ -22,8 +22,9 @@ after every change.
   Replays rescopes from ledger ground truth (adapters need no read API).
 - `oracle.py` — findings + severities. Invariants enforced on EVERY query.
 - `report.py` — metrics, scorecard, JSON/MD evidence, gate verdict/exit code.
-- `adapters/` — `base.py` (contract), `reference.py` (strict/naive/leaky demo),
-  `http.py` (customer shim), `NullAdapter` (no-memory baseline).
+- `adapters/` — `base.py` (contract + `AdapterError`), `reference.py`
+  (strict/naive/leaky demo), `http.py` (customer shim), `mem0.py` (hosted
+  Mem0), `NullAdapter` (no-memory baseline).
 - `cli.py` — `validate` / `run` / `list-adapters`.
 
 ## Non-negotiable invariants
@@ -76,7 +77,11 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
 
 ## Roadmap (in order — do not skip ahead)
 
-1. **Mem0 adapter** (`adapters/mem0.py`, spec `mem0`, extra `[mem0]`).
+1. ~~**Mem0 adapter**~~ — done (`adapters/mem0.py`, spec `mem0`, extra
+   `[mem0]`). Store-only, so the adapter supplies a deterministic answering
+   layer over `search`; writes are verbatim (`infer=False`) so the judge can
+   match exact values; `supports_ttl = False` (Mem0 expiry is wall-clock,
+   ours is logical) so expiry reports NOT_TESTED.
 2. Scenario pack growth: 5 → ~15 (delete/re-add, double correction,
    multi-key interference, cross-tenant suites).
 3. Zep adapter, then LangGraph store adapter.

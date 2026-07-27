@@ -96,7 +96,32 @@ memorycheck run scenarios --adapter http:memorycheck_http.yaml
 
 The contract is documented in [`src/memorycheck/adapters/http.py`](src/memorycheck/adapters/http.py), and `tests/test_http_adapter.py` is a working reference server. Set `supports_ttl: false` honestly: expiry checks will report **NOT TESTED** rather than silently passing.
 
-Native adapters for **Mem0, Zep and LangGraph stores** are the current roadmap; the adapter contract is deliberately small (`write / delete / query / reset`) and needs no read API.
+The adapter contract is deliberately small (`write / delete / query / reset`) and needs no read API. Native adapters for **Zep and LangGraph stores** are next on the roadmap.
+
+## Mem0
+
+```bash
+pip install -e ".[mem0]"
+export MEM0_API_KEY=...
+memorycheck run scenarios --adapter mem0
+```
+
+Mem0 is a memory *store*, not an agent, so the adapter supplies the answering layer itself: a query runs a scoped Mem0 `search` and templates the results into an answer exactly the way the reference adapter does. That keeps the measurement pointed at the thing being tested — **whether Mem0's retrieval still surfaces superseded, deleted, or foreign memories** — rather than at an LLM's phrasing.
+
+How the lifecycle maps onto Mem0:
+
+| memorycheck | Mem0 |
+|---|---|
+| scope (`tenant_id`/`user_id`) | folded into one `user_id`, prefixed with the run namespace so runs never collide |
+| `write` | `add("<key>: <value>", metadata={"key": …}, infer=False)` |
+| `delete` | find that scope's memories carrying the metadata key, delete each by id |
+| `reset` | `delete_all` over the namespace's `app_id` |
+| TTL | **not supported** — `supports_ttl = False` |
+
+Two honest caveats:
+
+- **`infer=False` is deliberate.** Mem0's default `infer=True` sends writes through an extraction LLM that rewrites them, which would make the deterministic judge unable to match the exact value. Storing verbatim keeps the measurement about retrieval, not extraction — but it does mean this benchmark exercises Mem0-as-store, not Mem0's inference pipeline.
+- **Expiry reports NOT TESTED, by design.** Mem0's expiry is wall-clock; memorycheck's time is logical. Rather than fake a pass with `sleep`, the adapter declares the capability absent and the report says so.
 
 ## CI gate
 
