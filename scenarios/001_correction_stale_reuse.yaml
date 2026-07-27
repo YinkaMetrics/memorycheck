@@ -1,0 +1,25 @@
+id: "001-correction-stale-reuse"
+title: "A corrected fact must replace the stale one, and deletion must silence both"
+tags: [correction, stale-reuse, deletion]
+subject:
+  tenant_id: acme
+  user_id: alice
+steps:
+  - op: write
+    key: plan
+    value: starter-legacy-2024
+  - op: query
+    prompt: "Which plan is this user on?"
+    expect:
+      must_use: [plan]
+  - op: correct
+    key: plan
+    value: scale-annual-2026
+  - op: query
+    prompt: "Which plan is this user on?"
+    expect:
+      must_use: [plan]
+  - op: delete
+    key: plan
+  - op: query
+    prompt: "Which plan is this user on?"

@@ -1,0 +1,57 @@
+{
+  "tool": {
+    "name": "memorycheck",
+    "version": "0.1.0"
+  },
+  "generated_at": "2026-07-27T11:50:50+00:00",
+  "adapter": "reference:strict",
+  "judge": "deterministic-v0",
+  "seeds": 2,
+  "scenarios": 5,
+  "gate": {
+    "fail_on": "P2",
+    "verdict": "PASS",
+    "blocking_findings": 0
+  },
+  "metrics": {
+    "current_fact_accuracy": {
+      "satisfied": 12,
+      "total": 12,
+      "value": 1.0
+    },
+    "scope_leakage": {
+      "opportunities": 8,
+      "violations": 0,
+      "not_tested": 0,
+      "rate": 0.0
+    },
+    "deletion_residue": {
+      "opportunities": 6,
+      "violations": 0,
+      "not_tested": 0,
+      "rate": 0.0
+    },
+    "stale_reuse": {
+      "opportunities": 2,
+      "violations": 0,
+      "not_tested": 0,
+      "rate": 0.0
+    },
+    "expiry_leak": {
+      "opportunities": 2,
+      "violations": 0,
+      "not_tested": 0,
+      "rate": 0.0
+    },
+    "memory_utility_delta": {
+      "with_memory": 1.0,
+      "no_memory_baseline": 0.0,
+      "delta": 1.0
+    }
+  },
+  "seed_stability": {
+    "stable": true,
+    "unstable_checks": []
+  },
+  "findings": []
+}

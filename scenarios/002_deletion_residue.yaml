@@ -1,0 +1,18 @@
+id: "002-deletion-residue"
+title: "After a deletion request, the fact must not influence behaviour"
+tags: [deletion, privacy]
+subject:
+  tenant_id: acme
+  user_id: dana
+steps:
+  - op: write
+    key: contact-preference
+    value: sms-optin-tier-a
+  - op: query
+    prompt: "How should we contact this user?"
+    expect:
+      must_use: [contact-preference]
+  - op: delete
+    key: contact-preference
+  - op: query
+    prompt: "How should we contact this user?"

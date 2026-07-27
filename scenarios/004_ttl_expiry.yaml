@@ -1,0 +1,19 @@
+id: "004-ttl-expiry"
+title: "An expired fact must stop influencing answers"
+tags: [expiry, ttl]
+subject:
+  tenant_id: acme
+  user_id: eve
+steps:
+  - op: write
+    key: promo
+    value: promo-code-bf26
+    ttl_steps: 2
+  - op: query
+    prompt: "Is there a promo for this user?"
+    expect:
+      must_use: [promo]
+  - op: advance_time
+    steps: 3
+  - op: query
+    prompt: "Is there a promo for this user?"

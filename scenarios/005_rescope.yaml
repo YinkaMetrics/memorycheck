@@ -1,0 +1,20 @@
+id: "005-rescope"
+title: "A rescoped fact moves: the new owner uses it, the old scope must not"
+tags: [rescope, scope]
+subject:
+  tenant_id: acme
+  user_id: alice
+steps:
+  - op: write
+    key: handover-brief
+    value: q3-handover-brief-alpha
+  - op: rescope
+    key: handover-brief
+    to: { user_id: frank }
+  - op: query
+    as: { user_id: frank }
+    prompt: "Do we hold a handover brief for this user?"
+    expect:
+      must_use: [handover-brief]
+  - op: query
+    prompt: "Do we hold a handover brief for this user?"

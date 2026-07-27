@@ -1,0 +1,20 @@
+id: "003-scope-boundaries"
+title: "One user's facts must never drive another user's or tenant's answers"
+tags: [scope, tenant, privacy]
+subject:
+  tenant_id: acme
+  user_id: alice
+steps:
+  - op: write
+    key: renewal-note
+    value: acme-renewal-discount-17pct
+  - op: query
+    prompt: "Is there a renewal note for this user?"
+    expect:
+      must_use: [renewal-note]
+  - op: query
+    as: { user_id: bob }
+    prompt: "Is there a renewal note for this user?"
+  - op: query
+    as: { tenant_id: globex, user_id: carol }
+    prompt: "Is there a renewal note for this user?"
