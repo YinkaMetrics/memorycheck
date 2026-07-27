@@ -138,3 +138,79 @@ double-correction, multi-key interference, cross-tenant suites. Values must
 stay distinctive; `memorycheck validate` must stay at 0 warnings. Expect the
 Mem0 stale-reuse behaviour to recur in double-correction and to interact with
 multi-key interference.
+
+---
+
+## 2026-07-27 — Strategy rulings on the entry above
+
+Founder rulings closing the FOR STRATEGY items from Task 1.
+
+1. **Reset-race fix ratified.** `27e9599` stays. Codified as invariant 9 in
+   `CLAUDE.md`: harness fixes that remove a false FAIL proceed, documented
+   here with the measurement proving the fault was ours; any change that would
+   flip a provider FAIL to PASS needs founder sign-off before merge.
+2. **Published Mem0 framing approved as-is.** Handoff protocol amended:
+   internal code decisions may proceed flagged FOR STRATEGY; external actions
+   (publishing, naming vendors, contacting providers, announcements) wait for
+   a ruling first. Drafting is not sending.
+3. **`mem0:infer` mode deferred** behind judge calibration. **Wall-clock TTL
+   mode parked** until a pilot asks for it. Neither is a gap to close now;
+   expiry stays NOT_TESTED for Mem0 and the report says so.
+4. Draft a neutral disclosure note to Mem0 — below, **awaiting approval**.
+5. Proceed to roadmap item 2.
+
+### FOR STRATEGY — draft disclosure note to Mem0 (NOT SENT)
+
+Status: **awaiting approval. Nothing has been sent, opened, or published to
+any Mem0 channel.** Per ruling 2, external actions wait for a ruling. Approve,
+edit, or discard.
+
+Open questions on the draft: (a) which channel — GitHub issue on `mem0ai/mem0`
+vs a private note; (b) whether to link the public repo, which frames it as a
+benchmark result rather than a bug report; (c) whether to name it "expected
+behaviour?" rather than a defect, since it may well be intended design.
+
+---
+
+**Title:** Retrieval returns superseded values after a correction (both
+`infer=True` and `infer=False`)
+
+Hi — we maintain an open-source lifecycle test harness for agent memory and
+ran it against the Mem0 platform. Sharing a reproduction in case it is useful;
+this may be intended behaviour, in which case we would like to document it
+correctly.
+
+**Observed:** when a fact is corrected by writing a new value for the same
+logical key, the earlier value remains retrievable and is returned alongside
+the new one. We found no supersession on the read path.
+
+**Reproduction** (`mem0ai` 2.0.11, hosted platform):
+
+```python
+c.add("plan: starter-legacy-2024", user_id=UID, infer=False)
+c.add("plan: scale-annual-2026",  user_id=UID, infer=False)
+c.search("Which plan is this user on?", filters={"user_id": UID})
+# -> both memories returned
+```
+
+With `infer=True` the same holds; the extraction step rephrases the text
+(`"User has a plan called ..."`) but both records persist and both are
+returned.
+
+**Why it matters for agents:** an agent templating search results into context
+sees the old and new values with no ordering signal to prefer the correction,
+so a corrected fact can still drive the answer.
+
+**Scope of the claim:** we tested retrieval and behavioural influence only.
+We make no claim about deletion of underlying storage. In the same run,
+deletion and user/tenant scoping behaved correctly — deleted values stopped
+influencing answers, and no cross-user or cross-tenant values surfaced.
+
+**Secondary note, not a defect report:** `delete_all` appears to apply
+asynchronously; a write issued immediately after one was lost in 6/14 trials,
+and 0/14 with a short settle. Callers doing delete-then-write may want to
+account for this.
+
+Happy to share the full harness and scenario files if useful.
+
+---

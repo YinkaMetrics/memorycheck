@@ -54,6 +54,14 @@ after every change.
 8. **Deletion claims are bounded.** We evidence accessible retrieval and
    behavioural influence — never physical erasure of provider backups. Keep
    that language in all docs and reports.
+9. **Harness fixes vs provider verdicts.** A false FAIL discredits the gate as
+   badly as a false PASS, so fixing a harness defect that manufactures a false
+   FAIL proceeds without sign-off — but must be documented in `HANDOFF.md`
+   with the measurement that proves it was ours (ratified 2026-07-27, re
+   `27e9599`). **Any change that would flip a provider FAIL to PASS requires
+   founder sign-off before merge**, no exceptions. If a fix would do both, it
+   needs sign-off. The test of good faith is that a genuine finding survives
+   the fix unchanged.
 
 ## Conventions
 
@@ -82,6 +90,18 @@ Entries stay factual and terse. **`HANDOFF.md` is public**: never include
 customer names, prospect details, credentials, account identifiers, or
 anything commercially sensitive. Provider behaviour measured from a public
 API is a benchmark finding and belongs here; who is evaluating it does not.
+
+**Internal vs external, and what may proceed unblocked** (ruling 2026-07-27):
+
+- **Internal code decisions may proceed**, flagged FOR STRATEGY in the same
+  entry. Do not stall implementation waiting on a ruling.
+- **External actions must wait for a ruling first** — publishing, naming a
+  vendor in public material, opening issues or contacting a provider,
+  announcements. Draft them into `HANDOFF.md` under FOR STRATEGY and stop
+  there. Drafting is not sending.
+
+The asymmetry is deliberate: an internal decision can be reverted in a commit,
+an external one cannot be unsent.
 
 ## Commands
 
