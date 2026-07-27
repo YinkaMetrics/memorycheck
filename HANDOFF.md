@@ -476,29 +476,54 @@ deletion removes a fact when no fact existed. Re-running with a 30-minute
 ceiling and `processed`-flag tracking so a stall is distinguishable from a
 slow success.
 
-### Extraction latency is variable, and that threatens the whole approach
+### CORRECTION: it is not latency variance. Extraction is content-dependent.
 
-| sample | latency |
+An earlier revision of this entry claimed extraction latency was "variable and
+unbounded" on the strength of a sample that showed no edge after 900s. **That
+claim was wrong and is withdrawn.** Re-running with a 30-minute ceiling and
+`processed`-flag tracking:
+
+```
+processed_at = 368.5s     <- processed on schedule, in line with the others
+edge_at      = None       <- and produced NO EDGE, ever, through 1800s
+```
+
+The episode processed normally. It simply yielded no edge. Latency is in fact
+consistent at ~330–370s; the variable is **whether extraction produces an edge
+at all**.
+
+| stored text | edge produced |
 |---|---|
-| stage 1c | 329s |
-| stage 2b (first write) | 370s |
-| stage 2b (second write) | 360s |
-| stage 3 | **>900s, no edge** |
+| `plan: starter-legacy-2024` | yes — `'This is the starter-legacy-2024 plan.'` |
+| `plan: scale-annual-2026` | yes — `'scale-annual-2026 is a plan.'` |
+| `plan: deletable-<10-digit stamp>` | **no**, twice, `processed=True` both times |
 
-The first three clustered tightly, which is exactly why 900s looked like
-2.7x headroom. The fourth exceeded it. Consequences:
+Zep's extractor decides what constitutes a fact worth materialising, and text
+that does not read as a meaningful statement appears to yield nothing.
 
-- **`_EXTRACTION_TIMEOUT = 900` is unsound.** It was set from three samples
-  that happened to agree. A long write in a full run would abort it.
-- **The ~5.5h stage-4 estimate is a floor, not an estimate.** It assumed
-  ~330s per episode; at variable latency with occasional >900s stalls the true
-  figure is unknown and could be far worse.
-- **The write-confirmation strategy may not suit Zep at all.** Invariant 10
-  requires confirming a write before reading, but confirmation cost here is
-  unbounded in practice. This is not a Zep defect — a knowledge-graph build is
-  legitimately heavier than a key-value write — it is a question about whether
-  a synchronous behavioural gate is the right instrument for this class of
-  provider. **Flagging FOR STRATEGY rather than resolving it.**
+**This is potentially fatal to measuring Zep with the current pack.** The
+scenario values are deliberately distinctive nonsense tokens — `zephyr-6621`,
+`harborlight-5529`, `pinecrest-6604` — chosen precisely so the deterministic
+judge can match them unambiguously (invariant: "scenario values must be
+distinctive"). The property that makes them good for the judge may be the same
+property that stops them being extracted. A probe is running against the
+pack's real values to find out.
+
+If they do not extract, the options are all unattractive and none is the
+implementer's to choose:
+
+1. Rewrite scenario values as natural-looking facts — weakens judge
+   precision and changes what every other adapter is measured on.
+2. Read Zep at `scope="episodes"` instead of edges — bypasses the knowledge
+   layer, and guarantees a stale_reuse FAIL by construction since a raw log
+   never invalidates. Rejected earlier for exactly that reason.
+3. Accept that Zep is out of scope for the deterministic judge, as
+   anticipated in the stage-1 ruling — though the mechanism is
+   non-extraction rather than paraphrase.
+
+**FOR STRATEGY.** Related: assumption 2 (deletion removes a fact from
+retrieval) **remains untested**, because both attempts used a value that never
+produced an edge to delete.
 
 ### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 
