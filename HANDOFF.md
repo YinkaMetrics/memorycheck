@@ -349,7 +349,49 @@ reduced further under load ([pricing](https://www.getzep.com/pricing/),
 [FAQ](https://help.getzep.com/faq)) — treat the headers as authoritative over
 the marketing pages.
 
-### Stage 1 — assumption 1 (verbatim values in edge facts): UNRESOLVED
+### Stage 1 — assumption 1: **PASSED**, and it repriced the whole exercise
+
+Third probe resolved it. Reading the episode directly by uuid
+(`graph.episode.get`) rather than through the list endpoint:
+
+```
+t= 313.9s  processed=False
+t= 329.3s  processed=True
+edge fact: 'This is the starter-legacy-2024 plan.'
+```
+
+**Assumption 1 holds.** The edge fact is rephrased — stored
+`"plan: starter-legacy-2024"`, returned `"This is the starter-legacy-2024
+plan."` — but the distinctive *value* survives byte-verbatim inside it, which
+is what the deterministic judge matches on. **Zep is measurable without the LLM
+judge**, so the calibration protocol does not block this adapter.
+
+**Extraction latency: 329s for one 25-byte episode.** `_EXTRACTION_TIMEOUT` had
+been guessed at 120s by analogy to Mem0's ~15s pipeline — wrong by ~3x, and
+every write in a run would have aborted. Reset to 900s (~2.7x headroom on the
+single measurement), `_DELETE_TIMEOUT` to 120s, and the poll interval from 1s
+to 5s since minute-scale extraction makes second-by-second polling pure
+rate-limit spend.
+
+**Consequence for stage 4 — wall clock, not cost.** The adapter blocks per
+write until the edge exists, so runtime is dominated by extraction:
+
+| | Zep | Mem0 |
+|---|---|---|
+| Credits / money per 15 × 2 | 60 credits (~0.6% of free month) | ~106 SEARCH (~10% of period) |
+| **Wall clock per 15 × 2** | **~5.5 hours** (60 episodes × ~330s) | ~2.5 minutes |
+
+Zep is ~130x cheaper per run and ~130x slower. That inverts the tiering
+rationale: for Mem0 the full pack is gated on quota, for Zep it is gated on
+time, and a per-commit Zep smoke test is impractical at any size — even one
+scenario is ~11 minutes. Worth a founder decision before stage 4 commits an
+afternoon of runtime.
+
+Caveat on the number: one measurement, on a project created ~20 minutes
+earlier, so a cold-start component cannot be ruled out. Stage 2 adds data
+points.
+
+### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 
 Three probes, each correcting the previous one's misreading.
 

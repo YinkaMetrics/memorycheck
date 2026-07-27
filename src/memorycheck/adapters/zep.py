@@ -52,13 +52,18 @@ _EPISODE_FETCH = 100
 # exists — confirming the episode alone would still leave the query racing
 # extraction. Mem0's comparable pipeline measured ~15s, and a graph build is
 # unlikely to be faster, so the ceiling is generous (invariant 10).
-# NOTE: _EXTRACTION_TIMEOUT was sized by analogy to Mem0's ~15s pipeline, and
-# live probing has already shown that guess to be wrong — a single small write
-# stayed unprocessed well past 120s. It must be reset from measured latency
-# before any Zep run is trusted; see HANDOFF, Zep staged verification.
-_EXTRACTION_TIMEOUT = 120.0
-_DELETE_TIMEOUT = 60.0
-_CONVERGE_INTERVAL = 1.0
+# Sized from measurement, not analogy. A single 25-byte episode took **329s**
+# to reach processed=True and produce its edge (measured 2026-07-27, free tier,
+# new project). The previous 120s was guessed from Mem0's ~15s pipeline and was
+# wrong by roughly 3x — every write would have aborted. 900s gives ~2.7x
+# headroom over the one measurement we have; refine as more accumulate.
+_EXTRACTION_TIMEOUT = 900.0
+_DELETE_TIMEOUT = 120.0
+
+# Extraction is minutes-scale, so second-by-second polling buys nothing and
+# spends the ~300 req/min rate limit. 5s keeps a write's poll count near 180
+# in the worst case.
+_CONVERGE_INTERVAL = 5.0
 
 # Per-request ceiling. Zep's rate limit measured at ~300 requests/minute, so
 # polling is cheap here in credits — but a request that hangs must not stall
