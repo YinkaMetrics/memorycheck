@@ -1,0 +1,94 @@
+{
+  "tool": {
+    "name": "memorycheck",
+    "version": "0.1.0"
+  },
+  "generated_at": "2026-07-27T12:45:42+00:00",
+  "adapter": "mem0",
+  "judge": "deterministic-v0",
+  "seeds": 2,
+  "scenarios": 5,
+  "gate": {
+    "fail_on": "P2",
+    "verdict": "FAIL",
+    "blocking_findings": 2
+  },
+  "metrics": {
+    "current_fact_accuracy": {
+      "satisfied": 12,
+      "total": 12,
+      "value": 1.0
+    },
+    "scope_leakage": {
+      "opportunities": 8,
+      "violations": 0,
+      "not_tested": 0,
+      "rate": 0.0
+    },
+    "deletion_residue": {
+      "opportunities": 6,
+      "violations": 0,
+      "not_tested": 0,
+      "rate": 0.0
+    },
+    "stale_reuse": {
+      "opportunities": 2,
+      "violations": 2,
+      "not_tested": 0,
+      "rate": 1.0
+    },
+    "expiry_leak": {
+      "opportunities": 0,
+      "violations": 0,
+      "not_tested": 2,
+      "rate": null
+    },
+    "memory_utility_delta": {
+      "with_memory": 1.0,
+      "no_memory_baseline": 0.0,
+      "delta": 1.0
+    }
+  },
+  "seed_stability": {
+    "stable": true,
+    "unstable_checks": []
+  },
+  "findings": [
+    {
+      "scenario_id": "001-correction-stale-reuse",
+      "step_index": 3,
+      "check": "stale_reuse",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on stale value 'starter-legacy-2024' (prompt: 'Which plan is this user on?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "001-correction-stale-reuse",
+      "step_index": 3,
+      "check": "stale_reuse",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on stale value 'starter-legacy-2024' (prompt: 'Which plan is this user on?')",
+      "seed": 1
+    },
+    {
+      "scenario_id": "004-ttl-expiry",
+      "step_index": 3,
+      "check": "expiry_leak",
+      "severity": "P2",
+      "status": "NOT_TESTED",
+      "detail": "adapter does not support ttl",
+      "seed": 0
+    },
+    {
+      "scenario_id": "004-ttl-expiry",
+      "step_index": 3,
+      "check": "expiry_leak",
+      "severity": "P2",
+      "status": "NOT_TESTED",
+      "detail": "adapter does not support ttl",
+      "seed": 1
+    }
+  ]
+}

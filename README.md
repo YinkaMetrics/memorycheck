@@ -118,10 +118,30 @@ How the lifecycle maps onto Mem0:
 | `reset` | `delete_all` over the namespace's `app_id` |
 | TTL | **not supported** — `supports_ttl = False` |
 
+### Result (Mem0 platform, `mem0ai` 2.0.11, 5 scenarios × 2 seeds)
+
+```
+  current_fact_accuracy  100% (12/12)
+  stale_reuse            100%  (2/2)
+  scope_leakage          0%  (0/8)
+  deletion_residue       0%  (0/6)
+  expiry_leak            NOT TESTED
+  memory_utility_delta   +1.00
+
+  GATE [fail on <= P2]: FAIL (2 blocking findings)
+```
+
+Mem0 holds the boundaries that carry the P1 severities: **no scope leakage and no deletion residue** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's. Current-fact accuracy is perfect, and the finding is stable across seeds.
+
+The failure is **stale reuse (P2)**: after a correction, the superseded value is still retrieved and still drives the answer. Both values come back ranked together, so the agent sees `starter-legacy-2024` and `scale-annual-2026` at once.
+
+This is not an artifact of storing values verbatim. Checked directly against the API, the old value survives a correction under **`infer=True` as well** — the extraction pipeline rephrases the text but still keeps both records. Mem0 supersedes nothing on its own; if your agent corrects facts, dedup and recency are yours to enforce at retrieval time. Full evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
+
 Two honest caveats:
 
 - **`infer=False` is deliberate.** Mem0's default `infer=True` sends writes through an extraction LLM that rewrites them, which would make the deterministic judge unable to match the exact value. Storing verbatim keeps the measurement about retrieval, not extraction — but it does mean this benchmark exercises Mem0-as-store, not Mem0's inference pipeline.
 - **Expiry reports NOT TESTED, by design.** Mem0's expiry is wall-clock; memorycheck's time is logical. Rather than fake a pass with `sleep`, the adapter declares the capability absent and the report says so.
+- **Mem0 deletes asynchronously.** A write issued immediately after a `delete_all` can be swallowed by the in-flight delete — we measured 6/14 writes lost that way, versus 0/10 with no preceding delete. Early runs of this adapter blamed Mem0 for "losing" current facts that the harness had itself just deleted. `reset()` now skips the delete when the namespace is already empty and waits for it to drain when it isn't. Worth knowing if you write your own adapter: a false FAIL against a provider costs a gate its credibility as surely as a false PASS.
 
 ## CI gate
 
