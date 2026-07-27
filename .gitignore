@@ -3,6 +3,7 @@ __pycache__/
 .env
 *.env
 secrets.*
+.DS_Store
 .pytest_cache/
 dist/
 build/
