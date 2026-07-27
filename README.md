@@ -120,7 +120,9 @@ How the lifecycle maps onto Mem0:
 | `reset` | `delete_all` over the namespace's `app_id` |
 | TTL | **not supported** — `supports_ttl = False` |
 
-### Result (Mem0 platform, `mem0ai` 2.0.11, 15 scenarios × 2 seeds)
+### Result
+
+**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** (latest release at time of run, published 2026-07-25), executed **2026-07-27 15:30 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`. The hosted platform exposes no version or build identifier to clients, so the run date is the only pin available on the service itself. An identical run on `mem0ai` 2.0.11 produced the same figures.
 
 ```
   current_fact_accuracy  100% (46/46)
@@ -135,11 +137,29 @@ How the lifecycle maps onto Mem0:
 
 Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 
-The failure is **stale reuse (P2)**, and it is total: 10/10 opportunities, every one of them a correction site (`001`, `007` at both of its corrections, `008`, `013`). After a correction the superseded value is still retrieved and still drives the answer — the agent sees `starter-legacy-2024` and `scale-annual-2026` at once.
+#### What this result is, and what it is not
 
-The sharpest evidence is `013-readd-then-correct`, which puts a deleted value, a re-added value and a correction on one key: **the deleted value stayed gone while the superseded one came back.** Deletion and supersession are independent mechanisms in Mem0, and only the first is enforced on the read path. Correcting a neighbouring key left its siblings untouched (`008`), so this is specific to supersession, not general retrieval noise.
+**It is not a report that Mem0 fails to overwrite corrected facts.** That is Mem0's documented, intended design. Its README, under *"New Memory Algorithm (April 2026)"*, states:
 
-This is not an artifact of storing values verbatim. Checked directly against the API, the old value survives a correction under **`infer=True` as well** — the extraction pipeline rephrases the text but still keeps both records. Mem0 supersedes nothing on its own; if your agent corrects facts, dedup and recency are yours to enforce at retrieval time. Full evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
+> "Single-pass ADD-only extraction -- one LLM call, no UPDATE/DELETE. Memories accumulate; nothing is overwritten."
+
+Accumulation is the design. A benchmark that flagged accumulation as a defect would just be reporting that it had not read the README.
+
+The claim this result tests is the one made two bullets away in the same section:
+
+> "Temporal Reasoning -- time-aware retrieval that ranks the right dated instance for queries about current state, past events, and upcoming plans."
+
+**The finding: retrieval did not change which value drove the answer at any correction site.** Given a query about current state — "Which plan is this user on?" — the superseded value was returned alongside the current one and continued to influence the answer, in **10/10 correction opportunities, stable across both seeds**, at every correction site in the pack (`001`, `007` at both of its corrections, `008`, `013`). We did not observe dated-instance ranking altering the outcome for these queries.
+
+The distinction matters because ADD-only storage is only a problem for an agent if the read path cannot resolve the accumulation. Storing everything and ranking correctly at query time is a coherent design; this measures whether the second half of it changed the behavioural outcome, which is the only part an agent's answer depends on.
+
+Three details that close the obvious objections:
+
+- **Not an artifact of bypassing extraction.** Checked directly against the API, the superseded value survives a correction under **`infer=True` as well** — the extraction pipeline rephrases the text but keeps both records and returns both.
+- **Not general retrieval noise.** Correcting one key left its siblings untouched (`008`), so this is specific to superseded values.
+- **Not the same mechanism as deletion.** `013-readd-then-correct` puts a deleted value, a re-added value and a correction on one key: **the deleted value stayed gone while the superseded one came back.** Deletion is enforced on the read path; supersession resolution was not observed to be.
+
+Mem0's docs describe no contradiction-resolution mechanism beyond the temporal-reasoning claim above, so recency across accumulated values is left to the caller. If your agent corrects facts, that resolution is yours to implement at retrieval time. Full evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
 
 Two honest caveats:
 
