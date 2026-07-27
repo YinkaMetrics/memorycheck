@@ -525,6 +525,69 @@ implementer's to choose:
 retrieval) **remains untested**, because both attempts used a value that never
 produced an edge to delete.
 
+### RESULT: 2 of 5 pack values never extract. Zep verification stops here.
+
+Five episodes, one graph, the pack's own values:
+
+```
+EDGE     plan: starter-legacy-2024        (baseline)
+NO EDGE  subscription: moonstone-7742     (scenario 006)
+EDGE     seat-count: pinecrest-6604       (scenario 011)
+EDGE     renewal-window: harborlight-5529 (scenario 009)
+NO EDGE  shipping-window: zephyr-6621     (scenario 008)
+
+3/5 produced a retrievable edge after 730s
+```
+
+Facts produced: `'renewal-window is related to harborlight-5529.'`,
+`'The starter-legacy-2024 is a plan.'`, `'The seat-count is pinecrest-6604.'`
+
+**~40% of the pack's values silently produce nothing.** With the adapter as
+built, those writes fail confirmation and abort the run; with confirmation
+relaxed, they would surface as `missing_current_fact` — a fabricated P2 failure
+against Zep for facts it was never asked to store in a form it extracts. Either
+way roughly two in five scenarios would yield artifacts rather than
+measurements, so **no aggregate Zep number can be trusted and stage 4 must not
+run.**
+
+**Second correction to the latency record.** In this probe three edges appeared
+within **30s**, against ~330–370s for single writes earlier. Latency is
+variable in both directions and the earlier figures were not representative
+either. Both the "consistent ~330–370s" and "unbounded" characterisations are
+withdrawn; the honest statement is that observed extraction ranged from <30s to
+never, and we do not have a model of what drives it.
+
+**This is a scoping limit, not a Zep defect, and must never be published as
+one.** A knowledge graph extracting only what reads as a fact is reasonable
+design. The incompatibility is with *our* instrument: the pack uses distinctive
+nonsense tokens precisely so the deterministic judge can match them
+unambiguously, and that same quality is what makes them unextractable. The tool
+and the provider are each internally consistent and mutually incompatible.
+
+**Status: stages 1–2 passed, stage 3 incomplete (assumption 2 untestable),
+stage 4 not started and not startable. `unverified = True` stays set. No Zep
+numbers exist and nothing is published.**
+
+Decision needed, none of it the implementer's:
+
+1. **Rewrite pack values as natural-sounding facts.** Would likely fix
+   extraction, but weakens judge precision and changes what Mem0 and every
+   future adapter are measured on — the Mem0 figures would need regenerating
+   for comparability.
+2. **Per-adapter value sets.** Keeps the deterministic judge, breaks
+   cross-provider comparability outright.
+3. **Read Zep at `scope="episodes"`.** Sidesteps extraction entirely, but
+   bypasses the knowledge layer and guarantees a `stale_reuse` FAIL by
+   construction, since a raw ingest log never invalidates. Rejected before for
+   that reason; still rejected.
+4. **Declare Zep out of scope until the LLM judge is calibrated**, as the
+   stage-1 ruling anticipated — the mechanism turned out to be non-extraction
+   rather than paraphrase, but the conclusion is the same.
+
+Recommendation: 4, with 1 evaluated separately on its merits for the pack as a
+whole rather than as a Zep workaround. Option 1 changes the benchmark for every
+provider to accommodate one, which is the wrong reason to change an instrument.
+
 ### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 
 Three probes, each correcting the previous one's misreading.

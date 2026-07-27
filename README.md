@@ -207,12 +207,15 @@ export ZEP_API_KEY=...
 memorycheck run scenarios --adapter zep
 ```
 
-> **Status: unverified against the live service.** The adapter is written
-> against the real `zep-cloud` 3.25.0 SDK surface and is exercised offline
-> through the full 15-scenario suite with a fake client, but it has never been
-> run against Zep itself — no credential was available. **There are no Zep
-> results to report, and the assumptions below are untested.** Treat it as a
-> starting point, not a measurement.
+> **Status: unverified. Verification is under way and incomplete.** The adapter
+> is written against the real `zep-cloud` 3.25.0 SDK surface and is exercised
+> offline through the full 15-scenario suite with a fake client. Staged
+> verification against the live service has begun and has **not** completed;
+> it surfaced an open question about how this harness and a knowledge-graph
+> provider fit together, which is being worked through before any results are
+> discussed. **There are no Zep results to report and none should be inferred
+> from this section.** Treat the adapter as a starting point, not a
+> measurement.
 
 Zep is a temporal knowledge graph rather than a flat store, which changes the
 mapping:

@@ -117,12 +117,13 @@ def _absent(exc: Exception) -> bool:
 class ZepAdapter(MemoryAdapter):
     name = "zep"
     supports_ttl = False  # Zep validity is wall-clock; ours is logical
-    unverified = True  # never executed against live Zep — see module docstring
+    unverified = True  # staged verification incomplete — see HANDOFF.md
     unverified_note = (
-        "the zep adapter has never been run against the live Zep service; "
-        "its assumptions (edge facts containing stored values verbatim, "
-        "episode+edge deletion removing a fact, extraction latency) are "
-        "unconfirmed"
+        "staged verification against live Zep is incomplete and blocked: "
+        "roughly 2 in 5 of the scenario pack's values never materialise as "
+        "graph edges (extraction is content-dependent), so those writes "
+        "cannot be confirmed and any aggregate figure would be an artifact "
+        "of our own value choices rather than a measurement of Zep"
     )
 
     def __init__(self) -> None:
