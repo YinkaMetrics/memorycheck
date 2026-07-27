@@ -3,11 +3,11 @@
     "name": "memorycheck",
     "version": "0.1.0"
   },
-  "generated_at": "2026-07-27T11:50:50+00:00",
+  "generated_at": "2026-07-27T13:23:22+00:00",
   "adapter": "reference:strict",
   "judge": "deterministic-v0",
-  "seeds": 2,
-  "scenarios": 5,
+  "seeds": 1,
+  "scenarios": 15,
   "gate": {
     "fail_on": "P2",
     "verdict": "PASS",
@@ -15,24 +15,24 @@
   },
   "metrics": {
     "current_fact_accuracy": {
-      "satisfied": 12,
-      "total": 12,
+      "satisfied": 23,
+      "total": 23,
       "value": 1.0
     },
     "scope_leakage": {
-      "opportunities": 8,
+      "opportunities": 11,
       "violations": 0,
       "not_tested": 0,
       "rate": 0.0
     },
     "deletion_residue": {
-      "opportunities": 6,
+      "opportunities": 9,
       "violations": 0,
       "not_tested": 0,
       "rate": 0.0
     },
     "stale_reuse": {
-      "opportunities": 2,
+      "opportunities": 5,
       "violations": 0,
       "not_tested": 0,
       "rate": 0.0

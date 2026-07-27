@@ -120,8 +120,10 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
    layer over `search`; writes are verbatim (`infer=False`) so the judge can
    match exact values; `supports_ttl = False` (Mem0 expiry is wall-clock,
    ours is logical) so expiry reports NOT_TESTED.
-2. Scenario pack growth: 5 → ~15 (delete/re-add, double correction,
-   multi-key interference, cross-tenant suites).
+2. ~~Scenario pack growth: 5 → ~15~~ — done. 15 scenarios; added delete/re-add,
+   double correction, re-add-then-correct, multi-key interference, TTL with a
+   non-expiring sibling, rescope-then-re-add, and cross-tenant suites
+   (shared `user_id` across tenants, cross-tenant rescope).
 3. Zep adapter, then LangGraph store adapter.
 4. LLM judge — only after the calibration protocol has been run.
 

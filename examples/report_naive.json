@@ -3,37 +3,37 @@
     "name": "memorycheck",
     "version": "0.1.0"
   },
-  "generated_at": "2026-07-27T11:50:50+00:00",
+  "generated_at": "2026-07-27T13:23:22+00:00",
   "adapter": "reference:naive",
   "judge": "deterministic-v0",
-  "seeds": 2,
-  "scenarios": 5,
+  "seeds": 1,
+  "scenarios": 15,
   "gate": {
     "fail_on": "P2",
     "verdict": "FAIL",
-    "blocking_findings": 10
+    "blocking_findings": 16
   },
   "metrics": {
     "current_fact_accuracy": {
-      "satisfied": 12,
-      "total": 12,
+      "satisfied": 23,
+      "total": 23,
       "value": 1.0
     },
     "scope_leakage": {
-      "opportunities": 8,
+      "opportunities": 11,
       "violations": 0,
       "not_tested": 0,
       "rate": 0.0
     },
     "deletion_residue": {
-      "opportunities": 6,
-      "violations": 6,
+      "opportunities": 9,
+      "violations": 9,
       "not_tested": 0,
       "rate": 1.0
     },
     "stale_reuse": {
-      "opportunities": 2,
-      "violations": 2,
+      "opportunities": 5,
+      "violations": 5,
       "not_tested": 0,
       "rate": 1.0
     },
@@ -73,76 +73,130 @@
       "seed": 0
     },
     {
-      "scenario_id": "001-correction-stale-reuse",
+      "scenario_id": "002-deletion-residue",
       "step_index": 3,
-      "check": "stale_reuse",
-      "severity": "P2",
+      "check": "deletion_residue",
+      "severity": "P1",
       "status": "FAIL",
-      "detail": "answer relied on stale value 'starter-legacy-2024' (prompt: 'Which plan is this user on?')",
-      "seed": 1
+      "detail": "answer relied on deleted value 'sms-optin-tier-a' (prompt: 'How should we contact this user?')",
+      "seed": 0
     },
     {
-      "scenario_id": "001-correction-stale-reuse",
+      "scenario_id": "004-ttl-expiry",
+      "step_index": 3,
+      "check": "expiry_leak",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on expired value 'promo-code-bf26' (prompt: 'Is there a promo for this user?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "005-rescope",
+      "step_index": 3,
+      "check": "deletion_residue",
+      "severity": "P1",
+      "status": "FAIL",
+      "detail": "answer relied on deleted value 'q3-handover-brief-alpha' (prompt: 'Do we hold a handover brief for this user?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "006-delete-readd",
+      "step_index": 3,
+      "check": "deletion_residue",
+      "severity": "P1",
+      "status": "FAIL",
+      "detail": "answer relied on deleted value 'moonstone-7742' (prompt: 'What subscription is on file?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "006-delete-readd",
       "step_index": 5,
       "check": "deletion_residue",
       "severity": "P1",
       "status": "FAIL",
-      "detail": "answer relied on deleted value 'scale-annual-2026', deleted value 'starter-legacy-2024' (prompt: 'Which plan is this user on?')",
-      "seed": 1
-    },
-    {
-      "scenario_id": "002-deletion-residue",
-      "step_index": 3,
-      "check": "deletion_residue",
-      "severity": "P1",
-      "status": "FAIL",
-      "detail": "answer relied on deleted value 'sms-optin-tier-a' (prompt: 'How should we contact this user?')",
+      "detail": "answer relied on deleted value 'moonstone-7742' (prompt: 'What subscription is on file?')",
       "seed": 0
     },
     {
-      "scenario_id": "002-deletion-residue",
+      "scenario_id": "007-double-correction",
+      "step_index": 2,
+      "check": "stale_reuse",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on stale value 'larkspur-8815' (prompt: 'Which billing tier applies?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "007-double-correction",
+      "step_index": 4,
+      "check": "stale_reuse",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on stale value 'larkspur-8815', stale value 'thistledown-2204' (prompt: 'Which billing tier applies?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "008-multi-key-interference",
+      "step_index": 3,
+      "check": "stale_reuse",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on stale value 'zephyr-6621' (prompt: 'What shipping window and support plan are set?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "009-delete-sibling-isolation",
       "step_index": 3,
       "check": "deletion_residue",
       "severity": "P1",
       "status": "FAIL",
-      "detail": "answer relied on deleted value 'sms-optin-tier-a' (prompt: 'How should we contact this user?')",
-      "seed": 1
+      "detail": "answer relied on deleted value 'harborlight-5529' (prompt: 'What escalation path applies, and is there a renewal window?')",
+      "seed": 0
     },
     {
-      "scenario_id": "004-ttl-expiry",
+      "scenario_id": "012-rescope-then-readd",
       "step_index": 3,
+      "check": "deletion_residue",
+      "severity": "P1",
+      "status": "FAIL",
+      "detail": "answer relied on deleted value 'wintergreen-4471' (prompt: 'What handover note is on file?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "013-readd-then-correct",
+      "step_index": 4,
+      "check": "deletion_residue",
+      "severity": "P1",
+      "status": "FAIL",
+      "detail": "answer relied on deleted value 'goldfinch-2938' (prompt: 'Which payment method is current?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "013-readd-then-correct",
+      "step_index": 4,
+      "check": "stale_reuse",
+      "severity": "P2",
+      "status": "FAIL",
+      "detail": "answer relied on stale value 'birchbark-7715' (prompt: 'Which payment method is current?')",
+      "seed": 0
+    },
+    {
+      "scenario_id": "014-ttl-sibling-key",
+      "step_index": 4,
       "check": "expiry_leak",
       "severity": "P2",
       "status": "FAIL",
-      "detail": "answer relied on expired value 'promo-code-bf26' (prompt: 'Is there a promo for this user?')",
+      "detail": "answer relied on expired value 'emberglow-5183' (prompt: 'Is the flash offer still valid, and who is the account owner?')",
       "seed": 0
     },
     {
-      "scenario_id": "004-ttl-expiry",
-      "step_index": 3,
-      "check": "expiry_leak",
-      "severity": "P2",
-      "status": "FAIL",
-      "detail": "answer relied on expired value 'promo-code-bf26' (prompt: 'Is there a promo for this user?')",
-      "seed": 1
-    },
-    {
-      "scenario_id": "005-rescope",
-      "step_index": 3,
+      "scenario_id": "015-cross-tenant-rescope",
+      "step_index": 2,
       "check": "deletion_residue",
       "severity": "P1",
       "status": "FAIL",
-      "detail": "answer relied on deleted value 'q3-handover-brief-alpha' (prompt: 'Do we hold a handover brief for this user?')",
+      "detail": "answer relied on deleted value 'sablewood-3364' (prompt: 'What audit trail is retained for this user?')",
       "seed": 0
-    },
-    {
-      "scenario_id": "005-rescope",
-      "step_index": 3,
-      "check": "deletion_residue",
-      "severity": "P1",
-      "status": "FAIL",
-      "detail": "answer relied on deleted value 'q3-handover-brief-alpha' (prompt: 'Do we hold a handover brief for this user?')",
-      "seed": 1
     }
   ]
 }

@@ -31,15 +31,15 @@ memorycheck run scenarios --adapter reference:naive
 The built-in reference adapter has three modes. `strict` honours the lifecycle. `naive` is the classic broken implementation — retrieval ignores the superseded flag, soft-deletes and TTL. `leaky` also filters by tenant only. **Every mode returns success on every write and delete.**
 
 ```
-memorycheck 0.1.0 — adapter=reference:naive judge=deterministic-v0 scenarios=5 seeds=2
-  current_fact_accuracy  100% (12/12)
-  stale_reuse            100%  (2/2)
-  scope_leakage          0%  (0/8)
-  deletion_residue       100%  (6/6)
+memorycheck 0.1.0 — adapter=reference:naive judge=deterministic-v0 scenarios=15 seeds=1
+  current_fact_accuracy  100% (23/23)
+  stale_reuse            100%  (5/5)
+  scope_leakage          0%  (0/11)
+  deletion_residue       100%  (9/9)
   expiry_leak            100%  (2/2)
   memory_utility_delta   +1.00
 
-  GATE [fail on <= P2]: FAIL (10 blocking findings)
+  GATE [fail on <= P2]: FAIL (16 blocking findings)
 ```
 
 Note what happened: current-fact accuracy is perfect — the system "works" in every demo you'd run by hand — and it is simultaneously running at 100% stale reuse and 100% deletion residue. That gap is the product surface storage status codes cannot see.
@@ -73,6 +73,8 @@ steps:
 Ops: `write` (`key`, `value`, optional `ttl_steps`), `correct`, `delete`, `rescope` (`key`, `to:`), `advance_time` (`steps` — time is logical and explicit), `query` (`prompt`, optional `expect.must_use`, optional `as:` scope override).
 
 Lifecycle invariants are enforced on **every** query whether or not you ask: no stale, expired, deleted or foreign value may drive an answer. `must_use` adds the positive requirement. Keep fact values distinctive — `memorycheck validate` warns when they aren't.
+
+The bundled pack is 15 scenarios covering correction and double-correction, deletion, delete-then-re-add, re-add-then-correct, multi-key interference, TTL expiry with a non-expiring sibling, rescope (including rescope-then-re-add and cross-tenant moves), and scope boundaries across users, across tenants, and where two tenants share a `user_id`.
 
 ## Checks and severities
 
@@ -118,22 +120,24 @@ How the lifecycle maps onto Mem0:
 | `reset` | `delete_all` over the namespace's `app_id` |
 | TTL | **not supported** — `supports_ttl = False` |
 
-### Result (Mem0 platform, `mem0ai` 2.0.11, 5 scenarios × 2 seeds)
+### Result (Mem0 platform, `mem0ai` 2.0.11, 15 scenarios × 2 seeds)
 
 ```
-  current_fact_accuracy  100% (12/12)
-  stale_reuse            100%  (2/2)
-  scope_leakage          0%  (0/8)
-  deletion_residue       0%  (0/6)
+  current_fact_accuracy  100% (46/46)
+  stale_reuse            100%  (10/10)
+  scope_leakage          0%  (0/22)
+  deletion_residue       0%  (0/18)
   expiry_leak            NOT TESTED
   memory_utility_delta   +1.00
 
-  GATE [fail on <= P2]: FAIL (2 blocking findings)
+  GATE [fail on <= P2]: FAIL (10 blocking findings)
 ```
 
-Mem0 holds the boundaries that carry the P1 severities: **no scope leakage and no deletion residue** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's. Current-fact accuracy is perfect, and the finding is stable across seeds.
+Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 
-The failure is **stale reuse (P2)**: after a correction, the superseded value is still retrieved and still drives the answer. Both values come back ranked together, so the agent sees `starter-legacy-2024` and `scale-annual-2026` at once.
+The failure is **stale reuse (P2)**, and it is total: 10/10 opportunities, every one of them a correction site (`001`, `007` at both of its corrections, `008`, `013`). After a correction the superseded value is still retrieved and still drives the answer — the agent sees `starter-legacy-2024` and `scale-annual-2026` at once.
+
+The sharpest evidence is `013-readd-then-correct`, which puts a deleted value, a re-added value and a correction on one key: **the deleted value stayed gone while the superseded one came back.** Deletion and supersession are independent mechanisms in Mem0, and only the first is enforced on the read path. Correcting a neighbouring key left its siblings untouched (`008`), so this is specific to supersession, not general retrieval noise.
 
 This is not an artifact of storing values verbatim. Checked directly against the API, the old value survives a correction under **`infer=True` as well** — the extraction pipeline rephrases the text but still keeps both records. Mem0 supersedes nothing on its own; if your agent corrects facts, dedup and recency are yours to enforce at retrieval time. Full evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
 

@@ -214,3 +214,104 @@ account for this.
 Happy to share the full harness and scenario files if useful.
 
 ---
+
+## 2026-07-27 — Task 2: scenario pack 5 → 15 (roadmap item 2)
+
+### 1. What shipped
+
+Ten new scenarios, `006`–`015`, covering the four families named in the
+roadmap. `memorycheck validate`: **15 scenarios, 0 warnings.**
+
+| Scenario | Covers |
+|---|---|
+| `006-delete-readd` | key re-used after deletion carries only the new value |
+| `007-double-correction` | two corrections chained; only the newest is live |
+| `008-multi-key-interference` | correcting one key must not disturb a sibling |
+| `009-delete-sibling-isolation` | deleting one key must not remove or expose siblings |
+| `010-cross-tenant-same-user-id` | identical `user_id` in another tenant is a different subject |
+| `011-multi-user-same-tenant` | two users in one tenant hold the same key independently |
+| `012-rescope-then-readd` | origin scope may hold a new value, never the moved one |
+| `013-readd-then-correct` | deleted + re-added + corrected on one key |
+| `014-ttl-sibling-key` | one key expiring must not take a non-expiring sibling |
+| `015-cross-tenant-rescope` | fact moved across tenants leaves the origin entirely |
+
+Reference-mode contracts hold and discrimination grew (seeds=1): opportunities
+went stale 1→5, deletion 3→9, scope 4→11, must_use 12→23. `reference:strict`
+passes clean; `reference:naive` fails stale/deletion/expiry at 100% and stays
+clean on scope; `reference:leaky` adds 36% (4/11) scope leakage. Regenerated
+`examples/report_{strict,naive,leaky}.md` and refreshed the README quickstart
+figures, which were stale at 5 scenarios.
+
+### 2. Findings — live Mem0, 15 scenarios × 2 seeds
+
+Seed-stable, no check disagreed across seeds. Evidence:
+`examples/report_mem0.{md,json}`.
+
+| Check | Severity | Result | vs 5-scenario run |
+|---|---|---|---|
+| current_fact_accuracy | P2 | 100% (46/46) | held, 4× opportunities |
+| stale_reuse | P2 | **100% (10/10)** | held, 5× opportunities |
+| scope_leakage | P1 | 0% (0/22) | held, ~3× opportunities |
+| deletion_residue | P1 | 0% (0/18) | held, 3× opportunities |
+| expiry_leak | P2 | 0 opportunities, 4 NOT_TESTED | unchanged |
+| memory_utility_delta | — | +1.00 | unchanged |
+
+`GATE [fail on <= P2]: FAIL (10 blocking findings)`. Tripling coverage did not
+change the verdict; it sharpened it.
+
+**Every stale_reuse failure is a correction site** — `001` step 3, `007`
+steps 2 and 4, `008` step 3, `013` step 4 — each failing on both seeds. `007`
+failing at *both* of its corrections shows this is not "only the latest
+correction survives": every superseded value persists.
+
+**`013-readd-then-correct` is the sharpest single result.** One key carrying a
+deleted value, a re-added value and a correction: the **deleted value stayed
+gone, the superseded value came back**. Deletion and supersession are
+independent mechanisms in Mem0 and only deletion is enforced on the read path.
+
+**Scope isolation held everywhere it was newly stressed**: shared `user_id`
+across two tenants (`010`), two users in one tenant holding the same key
+(`011`), cross-tenant rescope (`015`), and rescope-then-re-add at the origin
+scope (`012`) all clean. `008` confirms sibling keys are unaffected by a
+neighbour's correction, so the failure is specific to supersession rather than
+general retrieval noise.
+
+### 3. Decisions
+
+- **Values carry no shared tokens across a scenario.** The deterministic judge
+  matches by normalised containment, so a value that is a token-prefix of
+  another (`plan-alpha` vs `plan-alpha-2`) would false-match. Each value is a
+  distinct compound plus digits.
+- **Prompts name every key in `must_use`.** The reference adapter narrows
+  retrieval by key tokens, so a `must_use` key absent from the prompt would
+  fail under `strict` for a harness reason rather than a real one.
+- **`014` second prompt names the expired key deliberately**, so a broken
+  adapter actually gets the chance to surface the expired value; omitting it
+  would have made the expiry check unreachable and quietly toothless.
+- **Regenerated the reference example reports** rather than leaving committed
+  artifacts describing a 5-scenario pack.
+
+### 4. FOR STRATEGY
+
+- **The Mem0 disclosure draft above is now under-stated.** It cites the
+  5-scenario result; the 15-scenario run is materially stronger evidence
+  (10/10 correction sites, 0/18 deletion residue, 0/22 scope leakage) and the
+  `013` deleted-vs-superseded contrast is the clearest way to state the
+  finding. Recommend updating the draft before any approval to send. Still
+  **not sent** — external action, awaiting ruling.
+- **Should the pack keep growing, and against what target?** 15 scenarios take
+  ~2m30s per 2-seed live run. A pilot running this per-commit in CI will feel
+  that; per-provider run cost is now a real constraint on pack size.
+- **No scenario currently produces `missing_current_fact` against a healthy
+  provider**, so that check is only exercised by the null baseline. Worth
+  deciding whether a deliberate "store swallows a write" scenario belongs in
+  the pack or stays out of scope.
+
+### 5. Next
+
+Roadmap item 3 — Zep adapter, then LangGraph store adapter. Same shape as
+Mem0: lazy SDK import in an optional extra, credentials from an env var,
+live tests skipping cleanly without them, and honest capability flags
+(`supports_ttl`) so anything inexpressible reports NOT_TESTED. Expect the
+async-delete lesson from `27e9599` to recur — check write-after-delete
+visibility before trusting a clean `reset()`.
