@@ -52,9 +52,18 @@ _EPISODE_FETCH = 100
 # exists — confirming the episode alone would still leave the query racing
 # extraction. Mem0's comparable pipeline measured ~15s, and a graph build is
 # unlikely to be faster, so the ceiling is generous (invariant 10).
+# NOTE: _EXTRACTION_TIMEOUT was sized by analogy to Mem0's ~15s pipeline, and
+# live probing has already shown that guess to be wrong — a single small write
+# stayed unprocessed well past 120s. It must be reset from measured latency
+# before any Zep run is trusted; see HANDOFF, Zep staged verification.
 _EXTRACTION_TIMEOUT = 120.0
 _DELETE_TIMEOUT = 60.0
 _CONVERGE_INTERVAL = 1.0
+
+# Per-request ceiling. Zep's rate limit measured at ~300 requests/minute, so
+# polling is cheap here in credits — but a request that hangs must not stall
+# the run forever.
+_HTTP_TIMEOUT = 60.0
 
 
 def _slug(text: str) -> str:
@@ -119,7 +128,9 @@ class ZepAdapter(MemoryAdapter):
                 "Zep SDK not installed. Install the optional extra: "
                 'pip install -e ".[zep]"'
             ) from e
-        self._client = Zep(api_key=os.environ["ZEP_API_KEY"])
+        # The SDK defaults to timeout=None, so a hung request would block a
+        # run indefinitely rather than failing where it can be reported.
+        self._client = Zep(api_key=os.environ["ZEP_API_KEY"], timeout=_HTTP_TIMEOUT)
         self._namespace = "default"
         self._known_graphs: set[str] = set()
 

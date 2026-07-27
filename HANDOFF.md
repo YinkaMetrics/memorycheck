@@ -324,6 +324,90 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-27 — Zep staged verification: STAGE 1 IN PROGRESS, NOT PASSED
+
+Staged per ruling. **Stage 1 is not passed, so stages 2–4 have not been
+started and no Zep numbers exist.** Nothing published.
+
+### Zep quota and rate-limit model (logged before stage 4, as required)
+
+Structurally the inverse of Mem0's, which changes what we have to budget for.
+
+| | Mem0 | Zep |
+|---|---|---|
+| Metered on | reads (`SEARCH`, 1000/period) and writes (`ADD`, 10000/period) | **ingestion only** — credits per episode; storage and reads not charged |
+| Our cost per 15 × 2 run | ~106 SEARCH units, ~10% of a period | **60 credits** (30 episodes/seed, each ≤41 bytes so 1 credit each) |
+| Full runs per free period | ~9 | **~166** (10,000 credits/month free tier) |
+| Binding constraint | read quota — convergence polling is expensive | **rate limit and latency**, not credits |
+
+Measured from live response headers, not documentation:
+`x-ratelimit-limit: 300`, `x-ratelimit-remaining: 291`, `x-ratelimit-reset`
+about 60s out — so ~300 requests/minute on this account. Convergence polling
+is free in credits here, unlike Mem0, but counts against that rate limit.
+Published tiers also state Free has the lowest rate limit and it may be
+reduced further under load ([pricing](https://www.getzep.com/pricing/),
+[FAQ](https://help.getzep.com/faq)) — treat the headers as authoritative over
+the marketing pages.
+
+### Stage 1 — assumption 1 (verbatim values in edge facts): UNRESOLVED
+
+Three probes, each correcting the previous one's misreading.
+
+**1st probe.** One write, then poll `graph.search(scope="edges")` and
+`graph.episode.get_by_graph_id` for 300s. Result: **zero edges and zero
+episodes**. Read naively this says the write was lost.
+
+**2nd probe — that reading was wrong, and it was our error.** Keeping the
+`graph.add` return value (discarded the first time) shows the write is
+accepted and the episode exists:
+
+```
+content: 'plan: starter-legacy-2024'   <- byte-identical to what we wrote
+processed: False
+uuid_:   7fe5e303-...
+```
+
+`graph.episode.get_by_graph_id` evidently does **not list unprocessed
+episodes**, so "0 episodes" meant "nothing has finished processing", not
+"nothing was ingested". Also confirmed the credential and project are fine:
+`graph.create`, `graph.get` and `graph.list_all` all behave.
+
+**3rd probe, running:** read the episode directly by uuid (`graph.episode.get`),
+which exposes `processed`, over a 15-minute window — long enough to
+distinguish slow from never. Only if it processes do edges exist, and only
+then can the verbatim question be answered.
+
+**Assumption 1 remains genuinely unanswered.** The raw episode `content` is
+verbatim, but `query()` reads *edges*, and no edge has yet existed to inspect.
+
+### Why this justifies the staging
+
+Had stage 1 been skipped, the full pack would have run against a provider
+whose ingestion had not processed, every scenario would have failed
+`missing_current_fact`, and the output would have looked like a catastrophic
+Zep result. It would have been entirely our artifact. This is the third
+instance of the same class in this project — after the Mem0 reset race and the
+`infer=True` repro — and the first one caught before any numbers existed.
+
+It also invalidates a sizing decision made blind: `_EXTRACTION_TIMEOUT` is
+**120s**, and processing has already exceeded that without completing. Whatever
+stage 1c returns, that constant is wrong and must be set from evidence.
+
+Separately, `ZepAdapter` constructs `Zep(api_key=...)` with **no HTTP
+timeout** and the SDK defaults to `None`, so a hung request would block a run
+indefinitely. To fix regardless of the stage-1 outcome.
+
+### Next
+
+1. Finish stage 1c. If extraction never completes, **stop**: Zep cannot be
+   measured on this account tier and that is the finding — a scoping fact
+   about the tier, not a defect, and not publishable as one.
+2. If it completes, answer the verbatim question, then reset
+   `_EXTRACTION_TIMEOUT` from the measured latency before stage 2.
+3. Stages 2–4 remain unstarted. No Zep numbers until the founder rules.
+
+---
+
 ## 2026-07-27 — Rulings on Task 3e, and the experiment armed for 2026-08-01
 
 ### Rulings recorded
