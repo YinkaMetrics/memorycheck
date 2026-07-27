@@ -12,6 +12,15 @@ version or build identifier to clients, so the run date is the only pin
 available on the service itself. Three consecutive runs (two on 2.0.14, one on
 2.0.11) produced identical figures.
 
+**Provenance.** These figures were produced at commit `f230208`, before the
+adapter gained the write/delete convergence confirmation required by invariant
+10. Per-scenario re-checks after that change returned identical results, and
+the same figures were reproduced across three runs including one on `mem0ai`
+2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the
+attempt aborted on the rescope scenario with a write that stayed unretrievable
+for 30s, and the account's search quota is exhausted until 2026-08-01, so it
+cannot be re-run before then. See `HANDOFF.md`.
+
 **What the stale_reuse result is not.** It is not a report that Mem0 fails to
 overwrite corrected facts. That is documented, intended design — Mem0's README,
 under *"New Memory Algorithm (April 2026)"*, states: *"Single-pass ADD-only

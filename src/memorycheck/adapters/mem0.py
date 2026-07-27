@@ -162,9 +162,12 @@ class Mem0Adapter(MemoryAdapter):
         )
         if not landed:
             raise AdapterError(
-                f"mem0 write for key {key!r} was not retrievable after "
+                f"mem0 write {key!r}={value!r} for scope "
+                f"{scope.tenant_id}/{scope.user_id} was not retrievable after "
                 f"{waited:.1f}s — the store did not accept the write, so no "
-                "result from this run would be meaningful"
+                "result from this run would be meaningful. Known trigger: "
+                "re-adding text identical to a value deleted moments earlier "
+                "(see HANDOFF, scenario 012)"
             )
 
     def delete(self, scope: Scope, key: str) -> None:

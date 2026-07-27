@@ -135,6 +135,8 @@ How the lifecycle maps onto Mem0:
   GATE [fail on <= P2]: FAIL (10 blocking findings)
 ```
 
+**Provenance.** These figures were produced at commit `f230208`, before the adapter gained the write/delete convergence confirmation required by invariant 10. Per-scenario re-checks after that change returned identical results, and the same figures were reproduced across three runs including one on `mem0ai` 2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the attempt aborted on the rescope scenario with a write that stayed unretrievable for 30s, and the account's search quota is now exhausted until 2026-08-01, so it cannot be re-run before then. The pending regeneration and that unresolved abort are tracked in [`HANDOFF.md`](HANDOFF.md).
+
 Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 
 #### What this result is, and what it is not

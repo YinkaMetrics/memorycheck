@@ -324,6 +324,103 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-27 — Task 3e: regen failure diagnosed — **STOP, ruling needed**
+
+### 1. What shipped
+
+Diagnosis of the failed 15 × 2 regeneration, provenance disclosure on
+`README.md` and the `report_mem0.md` preamble, and a more specific write-failure
+message (value and scope, not just key).
+
+### 2. Findings — the primary hypothesis is refuted
+
+**It was not quota.** Reproduced on scenario `012-rescope-then-readd` at
+`--seeds 2`, with search quota still available:
+
+```
+adapter error: mem0 write for key 'handover-note' was not retrievable
+after 30.3s — the store did not accept the write
+```
+
+That is the original abort: a **convergence timeout**, not a rate-limit
+rejection. Two supporting details: the failing run predated the `_call`
+wrapping, so a quota rejection would have surfaced as a multi-line traceback
+rather than the single line observed; and the run consumed ~83 of ~106
+expected units, consistent with dying ~78% through, around scenario 012.
+
+Quota exhaustion is real but **downstream**: the follow-up diagnostic on `013`
+returned `429 ... quota_used: 1000`. Search quota is now **0 of 1000 until
+2026-08-01**. It was spent on the targeted diagnosis, not on blind retries.
+
+Also refuted along the way: identifier truncation. `app_id` (43 chars) and
+`user_id` (56 chars) differ only in the seed digit near the end, so server-side
+truncation would have collided the two seeds and explained why only `--seeds 2`
+failed. Tested directly — no truncation, each scope reads back only its own
+value.
+
+**Discovered:** Mem0 meters two independent counters — SEARCH (1000/period,
+the scarce one) and ADD (10000/period). Convergence polling spends SEARCH.
+
+### 3. Leading hypothesis — unconfirmed, and out of runway
+
+Scenario `012` is the only one whose rescope replays an **identical value into
+a different scope immediately after deleting it**: the runner emits
+`delete(ivor, handover-note)` then `write(jonas, handover-note,
+wintergreen-4471)` with the same text. The write is acknowledged and then not
+retrievable for 30s. Candidate mechanisms, in order:
+
+1. Mem0 deduplicates identical content within an `app_id`, and the just-deleted
+   original is still present in its dedup index, so the re-add is swallowed.
+2. The delete propagates asynchronously through a secondary index and reaps the
+   new memory — the reset race (`27e9599`) recurring at memory granularity
+   rather than namespace granularity.
+3. Something specific to writing a value that currently exists nowhere but did
+   moments ago.
+
+**This cannot be distinguished without live calls, and search quota is zero
+until 2026-08-01.**
+
+### 4. FOR STRATEGY — **blocking ruling required**
+
+**This may be an adapter defect, so per the standing instruction everything
+external stops here.** Nothing has been sent or published.
+
+The question that needs a founder call is which of these it is:
+
+- **Adapter defect.** Our rescope replay writes text identical to what it just
+  deleted. A real integrator moving a fact between users would plausibly do the
+  same, but we could also make the harness avoid the pattern. If we "fix" it in
+  the adapter, we may be hiding a genuine provider behaviour — precisely what
+  invariant 9 forbids without sign-off.
+- **Genuine Mem0 behaviour and a publishable finding.** "A value re-added
+  immediately after deletion is not retrievable for at least 30s" is exactly
+  the class of lifecycle defect this tool exists to surface. If so it deserves
+  its own scenario and disclosure, not a workaround.
+
+I cannot resolve this without evidence, and the evidence needs quota.
+**Recommendation:** treat the published Mem0 figures as still valid — they
+concern correction handling, and `012` contributes no stale_reuse finding — but
+**do not ship anything external until this is settled**, because the obvious
+question from a reader is whether the harness works, and today the honest
+answer is "it aborts on one of fifteen scenarios for a reason we cannot yet
+name".
+
+Note the exposure if this is provider behaviour: the same pattern is what a
+customer's own delete-then-re-add would hit, which makes it more interesting
+than the correction finding, not less.
+
+### 5. Next — gated
+
+1. **On 2026-08-01, when quota resets:** run `012` in isolation with logging at
+   each step to establish which write fails and whether the value ever becomes
+   retrievable; then vary the value so the re-add is *not* identical to the
+   deleted text, which discriminates hypothesis 1 from 2.
+2. Then the founder ruling above.
+3. Then the pending full 15 × 2 regeneration, and only then external posting.
+4. LangGraph and the Zep credential remain behind all of it.
+
+---
+
 ## 2026-07-27 — Task 3d: invariant 10 (never judge a provider on a race)
 
 ### 1. What shipped
