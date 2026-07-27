@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 
 from ..ledger import Scope
 from .base import AdapterError, MemoryAdapter, QueryResult
@@ -39,6 +40,12 @@ from .base import AdapterError, MemoryAdapter, QueryResult
 # of facts per scope; this is a safety ceiling, not a relevance filter — we do
 # not want a low top_k to silently drop the current fact and fake a pass.
 _SEARCH_TOP_K = 100
+
+# See reset(): Mem0 deletes asynchronously, so a namespace that actually had
+# residue must be confirmed empty before we write into it again.
+_RESET_POLL_ATTEMPTS = 10
+_RESET_POLL_SECONDS = 1.0
+_RESET_SETTLE_SECONDS = 2.0
 
 
 def _slug(text: str) -> str:
@@ -80,10 +87,32 @@ class Mem0Adapter(MemoryAdapter):
     # ------------------------------------------------------------- lifecycle
 
     def reset(self, namespace: str) -> None:
-        # Adopt the namespace first, then delete everything tagged with its
-        # app_id — clears any residue from a previous run of this scenario/seed.
+        """Clear this run's namespace — but only if it actually holds anything.
+
+        Mem0's delete_all is applied asynchronously, and a write issued
+        immediately afterwards can be swallowed by the in-flight delete:
+        measured at 6/14 writes lost when a delete_all precedes them, versus
+        0/10 with no preceding delete. That race manifested as phantom
+        `missing_current_fact` failures — the harness blaming the provider for
+        losing a fact the harness had itself just deleted.
+
+        So: read the namespace first, and skip the delete entirely when it is
+        empty (the overwhelmingly common case — namespaces are per scenario and
+        seed). When there really is residue, delete it and wait for the
+        namespace to read empty before returning, so no write can race it.
+        """
         self._namespace = namespace or "default"
-        self._client.delete_all(app_id=self._app_id())
+        app_id = self._app_id()
+        if not self._namespace_rows(app_id):
+            return  # nothing to clear, so nothing to race
+        self._client.delete_all(app_id=app_id)
+        for _ in range(_RESET_POLL_ATTEMPTS):
+            time.sleep(_RESET_POLL_SECONDS)
+            if not self._namespace_rows(app_id):
+                break
+        # The namespace reads empty, but the delete may still be settling
+        # server-side; a short margin keeps the following write safe.
+        time.sleep(_RESET_SETTLE_SECONDS)
 
     def write(
         self, scope: Scope, key: str, value: str, ttl_steps: int | None = None
@@ -132,6 +161,10 @@ class Mem0Adapter(MemoryAdapter):
     def _scope_memories(self, scope: Scope) -> list[dict]:
         resp = self._client.get_all(filters={"user_id": self._user_id(scope)})
         return self._results(resp)
+
+    def _namespace_rows(self, app_id: str) -> list[dict]:
+        """Everything stored under this run's namespace, across all scopes."""
+        return self._results(self._client.get_all(filters={"app_id": app_id}))
 
     @staticmethod
     def _results(resp) -> list[dict]:

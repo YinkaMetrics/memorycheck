@@ -46,6 +46,7 @@ class FakeMem0Client:
     def __init__(self) -> None:
         self.rows: list[dict] = []
         self._ids = itertools.count(1)
+        self.delete_all_calls = 0
 
     def add(self, messages, user_id=None, app_id=None, metadata=None, infer=None, **kw):
         assert infer is False, "adapter must store verbatim (infer=False)"
@@ -61,8 +62,13 @@ class FakeMem0Client:
         return {"results": []}
 
     def _scoped(self, filters):
-        uid = (filters or {}).get("user_id")
-        return [r for r in self.rows if r["user_id"] == uid]
+        f = filters or {}
+        rows = self.rows
+        if "user_id" in f:
+            rows = [r for r in rows if r["user_id"] == f["user_id"]]
+        if "app_id" in f:
+            rows = [r for r in rows if r["app_id"] == f["app_id"]]
+        return list(rows)
 
     def get_all(self, filters=None, **kw):
         return {"results": self._scoped(filters)}
@@ -75,13 +81,17 @@ class FakeMem0Client:
         return {}
 
     def delete_all(self, app_id=None, **kw):
+        self.delete_all_calls += 1
         self.rows = [r for r in self.rows if r["app_id"] != app_id]
         return {}
 
 
 @pytest.fixture()
-def offline_adapter():
-    # Bypass __init__ so the fixture needs neither the SDK nor a key.
+def offline_adapter(monkeypatch):
+    # Bypass __init__ so the fixture needs neither the SDK nor a key. The
+    # fake client is synchronous, so reset()'s settle delays only add dead
+    # wall-clock here — stub them out; the live run covers the real timing.
+    monkeypatch.setattr("memorycheck.adapters.mem0.time.sleep", lambda _: None)
     adapter = Mem0Adapter.__new__(Mem0Adapter)
     adapter._client = FakeMem0Client()
     adapter._namespace = "default"
@@ -138,6 +148,25 @@ def test_reset_clears_the_whole_namespace(offline_adapter):
     a.write(ALICE, "plan", "starter-legacy-2024")
     a.reset("ns")
     assert "starter-legacy-2024" not in a.query(ALICE, "anything?").answer
+
+
+def test_reset_skips_delete_on_a_fresh_namespace(offline_adapter):
+    # Mem0 deletes asynchronously and an in-flight delete_all can swallow the
+    # write that follows it, which showed up as phantom missing_current_fact
+    # failures. A fresh namespace has nothing to clear, so it must not issue a
+    # delete at all — that is what keeps the race off the common path.
+    a = offline_adapter
+    a.reset("fresh-namespace")
+    assert a._client.delete_all_calls == 0
+
+
+def test_reset_deletes_when_the_namespace_has_residue(offline_adapter):
+    a = offline_adapter
+    a.reset("ns")
+    a.write(ALICE, "plan", "starter-legacy-2024")
+    before = a._client.delete_all_calls
+    a.reset("ns")  # same namespace, now holds residue
+    assert a._client.delete_all_calls == before + 1
 
 
 # ------------------------------------------------------------------ live layer
