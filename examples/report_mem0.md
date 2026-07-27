@@ -7,10 +7,10 @@
 
 **Run provenance.** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints),
 SDK `mem0ai` **2.0.14** — the latest release at time of run, published
-2026-07-25 — executed **2026-07-27 15:30 UTC**. The hosted platform exposes no
+2026-07-25 — executed **2026-07-27 15:58 UTC**. The hosted platform exposes no
 version or build identifier to clients, so the run date is the only pin
-available on the service itself. An identical run on `mem0ai` 2.0.11 produced
-the same figures.
+available on the service itself. Three consecutive runs (two on 2.0.14, one on
+2.0.11) produced identical figures.
 
 **What the stale_reuse result is not.** It is not a report that Mem0 fails to
 overwrite corrected facts. That is documented, intended design — Mem0's README,
@@ -32,12 +32,18 @@ earlier values in the chain, not merely the most recent superseded one.
 stayed gone while the *superseded* value returned, so deletion is enforced on
 the read path where supersession resolution was not observed to be.
 
+**Reproduce it standalone:** [`repro_correction.py`](repro_correction.py),
+Mem0 SDK only, no memorycheck dependency. It waits for the correction to
+become visible before judging — `infer=True` extraction took ~15s here, and
+querying earlier returns the superseded value alone, which is an artifact of
+racing the pipeline rather than a result.
+
 ---
 
 # memorycheck evidence report
 
 - **Adapter:** `mem0`   **Judge:** `deterministic-v0`
-- **Scenarios:** 15   **Seeds:** 2   **Generated:** 2026-07-27T15:30:54+00:00
+- **Scenarios:** 15   **Seeds:** 2   **Generated:** 2026-07-27T15:58:06+00:00
 - **Gate (fail on ≤P2):** **FAIL** (10 blocking findings)
 
 | Check | Severity | Result |

@@ -324,6 +324,100 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-27 — Task 3c: pre-launch blockers
+
+Three blockers cleared before external posting.
+
+### 1. What shipped
+
+**Blocker 1 — standalone repro.** `examples/repro_correction.py`: no
+memorycheck import, only the Mem0 SDK, reads `MEM0_API_KEY`, runs the
+correction case under `infer=False` and `infer=True` and prints exactly what
+retrieval returns. Cleans up after itself. Real output pasted verbatim at the
+bottom of the file. Linked from the README Result section with run
+instructions.
+
+**Blocker 2 — runtime guard on unverified adapters.** `unverified` and
+`unverified_note` flags on `MemoryAdapter` (default `False`), so this
+generalises to every future adapter rather than special-casing Zep:
+
+- `memorycheck run` prints a boxed `UNVERIFIED ADAPTER` warning to **stderr
+  before executing**;
+- `build_summary` carries `adapter_unverified` / `adapter_unverified_note`
+  into the JSON;
+- the Markdown report opens with a blockquote banner above the header;
+- the terminal scorecard repeats it under the gate verdict.
+
+`ZepAdapter.unverified = True`. Three tests pin it: the stamp reaches JSON and
+Markdown, verified adapters carry no stamp, and Zep declares itself unverified.
+
+**Blocker 3 — provenance agreement.** Verified `mem0ai` **2.0.14** and the run
+timestamp match across README, the `report_mem0.md` preamble and
+`report_mem0.json`.
+
+### 2. Findings
+
+**The repro caught a real overclaim risk in its first run.** With a fixed 5s
+settle, the `infer=True` case returned the superseded value **alone** — no
+current value at all. That is a far more damaging-looking result and it is an
+artifact: Mem0's extraction pipeline had not finished. Re-run with polling,
+the correction became visible after **~15s** and both values were returned,
+matching the `infer=False` case. The script now waits for the correction
+before judging anything, and the file documents why.
+
+Had that first output been pasted as evidence, we would have published
+"Mem0 loses the corrected value entirely" — false, and trivially refuted by
+anyone re-running with a longer wait. Same failure mode as the reset race:
+the harness racing an asynchronous provider and blaming the provider.
+
+Steady-state repro output (mem0ai 2.0.14, 2026-07-27 15:51 UTC):
+
+| | correction visible after | returned | superseded present | current present |
+|---|---|---|---|---|
+| `infer=False` | ~3s | 2 memories | yes | yes |
+| `infer=True` | ~15s | 2 memories | yes | yes |
+
+**Secondary fix, same class.** Hardening the Zep adapter's error handling
+revealed it swallowed *all* exceptions on read paths and returned "I don't
+have anything stored" — so an auth failure or network fault would have been
+scored as a provider that forgot every fact. Now only a 404 (graph absent)
+reads as legitimately empty; everything else raises `AdapterError` and aborts
+the run. Write failures abort rather than passing silently. This is invariant
+9 applied before the fact rather than after.
+
+### 3. Decisions
+
+- **Flag lives on the adapter base, not the CLI**, so an adapter declares its
+  own verification status and the guard cannot be forgotten at a call site.
+- **The stamp travels in the JSON**, not only the human-readable report — a
+  number copied out of an artifact must carry its own disclaimer.
+- **The repro polls rather than sleeping a fixed interval.** Reporting steady
+  state, not a race we won.
+- **Regenerated `report_mem0.json`** so the artifact is genuinely
+  machine-produced with the new field rather than hand-patched.
+- **Fake client raises a 404-carrying error** rather than subclassing the
+  SDK's `NotFoundError`, so offline tests still run where the `zep` extra is
+  not installed (CI installs only `[dev]`).
+
+### 4. FOR STRATEGY
+
+- **The report_mem0.md preamble fragility bit immediately.** Regenerating the
+  report to pick up the new JSON field wiped the hand-written framing and it
+  had to be re-applied by hand. Second occurrence; it will eventually ship
+  wrong. Recommend the reporter grow a `--note` input, or the framing move to
+  a sibling file the report links to. Previously logged; now demonstrated.
+- **`unverified` is honour-system.** Nothing enforces clearing it only after a
+  real run. Consider requiring a recorded evidence path alongside clearing it.
+
+### 5. Next
+
+Unchanged: confirm the Zep assumptions against live Zep once a key exists,
+then LangGraph. The ~15s extraction latency measured here strengthens Zep
+assumption 5 — a graph-extraction pipeline is likely to need a comparable or
+longer settle, so write-then-immediately-query will need care there too.
+
+---
+
 ## 2026-07-27 — Task 3b: Mem0 framing correction + version currency
 
 Approved external-framing change. Applied to `README.md` and
