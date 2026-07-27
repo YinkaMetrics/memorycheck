@@ -70,6 +70,11 @@ _CONVERGE_INTERVAL = 5.0
 # the run forever.
 _HTTP_TIMEOUT = 60.0
 
+# reset() must see every graph in the project, so graph listing pages until
+# total_count is reached. The page cap is a runaway guard, not a limit.
+_PAGE_SIZE = 100
+_MAX_GRAPH_PAGES = 50
+
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
@@ -349,15 +354,30 @@ class ZepAdapter(MemoryAdapter):
             return []
 
     def _list_graph_ids(self) -> list[str]:
-        try:
-            resp = self._client.graph.list_all(page_size=100)
-        except Exception:  # noqa: BLE001 - listing unavailable
-            return []
-        return [
-            g.graph_id
-            for g in (getattr(resp, "graphs", None) or [])
-            if getattr(g, "graph_id", None)
-        ]
+        """Every graph id in the project, following pagination.
+
+        A single page is not enough. One full run creates roughly 45 graphs
+        (one per namespace/tenant/user), so an account crosses a 100-row page
+        within a few runs — and a `reset()` that cannot see a graph cannot
+        clear it, leaving residue that would later be scored against the
+        provider. `total_count` is authoritative; keep paging until we have it.
+        """
+        ids: list[str] = []
+        page = 1
+        while page <= _MAX_GRAPH_PAGES:
+            try:
+                resp = self._client.graph.list_all(page_number=page, page_size=_PAGE_SIZE)
+            except Exception as e:  # noqa: BLE001
+                if page == 1:
+                    return []  # listing unavailable at all
+                raise AdapterError(f"zep graph listing failed on page {page}: {_why(e)}") from e
+            rows = list(getattr(resp, "graphs", None) or [])
+            ids.extend(g.graph_id for g in rows if getattr(g, "graph_id", None))
+            total = getattr(resp, "total_count", None)
+            if not rows or (total is not None and len(ids) >= total):
+                break
+            page += 1
+        return ids
 
     @staticmethod
     def _safe_delete(fn, uuid_: str) -> None:

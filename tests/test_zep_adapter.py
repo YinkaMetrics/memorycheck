@@ -108,8 +108,13 @@ class FakeZepClient:
         self.graphs.pop(graph_id, None)
         return {}
 
-    def _list_all(self, **kw):
-        return _Ns(graphs=[FakeGraph(g) for g in self.graphs])
+    def _list_all(self, *, page_number=1, page_size=100, **kw):
+        # Real Zep paginates and reports total_count; a single page is not
+        # enough once an account accumulates graphs.
+        all_ids = list(self.graphs)
+        start = (page_number - 1) * page_size
+        page = all_ids[start:start + page_size]
+        return _Ns(graphs=[FakeGraph(g) for g in page], total_count=len(all_ids))
 
     # -- writes
     def _add(self, *, graph_id, type, data, **kw):
@@ -253,6 +258,23 @@ def test_reset_drops_the_namespace(offline_adapter):
     a.write(ALICE, "plan", "starter-legacy-2024")
     a.reset("ns")
     assert "starter-legacy-2024" not in a.query(ALICE, "Which plan?").answer
+
+
+def test_reset_sees_graphs_beyond_the_first_page(offline_adapter, monkeypatch):
+    """A full run creates ~45 graphs, so an account crosses a 100-row page
+    within a few runs. A reset() that cannot see a graph cannot clear it, and
+    the residue would later be scored against the provider."""
+    import memorycheck.adapters.zep as zep_mod
+
+    monkeypatch.setattr(zep_mod, "_PAGE_SIZE", 2)  # force multi-page listing
+    a = offline_adapter
+    a.reset("ns")
+    for user in ("u1", "u2", "u3", "u4", "u5"):
+        a.write(Scope("acme", user), "plan", f"value-{user}")
+    assert len(a._client.graphs) == 5
+    assert len(a._list_graph_ids()) == 5, "listing must follow pagination"
+    a.reset("ns")
+    assert a._client.graphs == {}, "reset must clear graphs past the first page"
 
 
 def test_reset_leaves_other_namespaces_alone(offline_adapter):
