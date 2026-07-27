@@ -122,7 +122,7 @@ How the lifecycle maps onto Mem0:
 
 ### Result
 
-**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** (latest release at time of run, published 2026-07-25), executed **2026-07-27 15:30 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`. The hosted platform exposes no version or build identifier to clients, so the run date is the only pin available on the service itself. An identical run on `mem0ai` 2.0.11 produced the same figures.
+**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** (latest release at time of run, published 2026-07-25), executed **2026-07-27 15:58 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`. The hosted platform exposes no version or build identifier to clients, so the run date is the only pin available on the service itself. Three consecutive runs — two on 2.0.14, one on 2.0.11 — produced identical figures.
 
 ```
   current_fact_accuracy  100% (46/46)
@@ -159,7 +159,17 @@ Three details that close the obvious objections:
 - **Not general retrieval noise.** Correcting one key left its siblings untouched (`008`), so this is specific to superseded values.
 - **Not the same mechanism as deletion.** `013-readd-then-correct` puts a deleted value, a re-added value and a correction on one key: **the deleted value stayed gone while the superseded one came back.** Deletion is enforced on the read path; supersession resolution was not observed to be.
 
-Mem0's docs describe no contradiction-resolution mechanism beyond the temporal-reasoning claim above, so recency across accumulated values is left to the caller. If your agent corrects facts, that resolution is yours to implement at retrieval time. Full evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
+Mem0's docs describe no contradiction-resolution mechanism beyond the temporal-reasoning claim above, so recency across accumulated values is left to the caller. If your agent corrects facts, that resolution is yours to implement at retrieval time.
+
+**Check it yourself.** [`examples/repro_correction.py`](examples/repro_correction.py) reproduces this in about 40 lines of Mem0 SDK calls with no memorycheck dependency — write a fact, correct it, ask a current-state question, print what comes back:
+
+```bash
+pip install "mem0ai>=2.0.14"
+export MEM0_API_KEY=...
+python examples/repro_correction.py
+```
+
+Real output from that script is pasted at the bottom of the file. It waits for the correction to become visible before judging anything: with `infer=True` the extraction pipeline took ~15s, and querying earlier returns the superseded value *alone* — a much more dramatic-looking result that is purely an artifact of racing the pipeline. Full suite evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
 
 Two honest caveats:
 
