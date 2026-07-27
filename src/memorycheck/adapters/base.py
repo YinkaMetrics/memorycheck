@@ -12,10 +12,37 @@ expiry checks are reported NOT_TESTED for that run, never silently passed.
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..ledger import Scope
+
+
+def poll_until(
+    predicate: Callable[[], bool],
+    timeout: float,
+    interval: float = 0.5,
+) -> tuple[bool, float]:
+    """Wait for a provider to converge, returning (converged, seconds_waited).
+
+    Invariant 10: adapters confirm their own writes and deletes have landed
+    rather than sleeping a fixed interval and hoping. The predicate is checked
+    immediately, so a synchronous provider costs nothing; an eventually
+    consistent one costs only what it actually needs.
+
+    Callers must treat a False return as a reportable condition carrying the
+    elapsed time — never as "the store is empty".
+    """
+    started = time.monotonic()
+    while True:
+        if predicate():
+            return True, time.monotonic() - started
+        waited = time.monotonic() - started
+        if waited >= timeout:
+            return False, waited
+        time.sleep(min(interval, max(0.0, timeout - waited)))
 
 
 class AdapterError(Exception):

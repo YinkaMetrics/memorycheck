@@ -63,6 +63,18 @@ after every change.
    founder sign-off before merge**, no exceptions. If a fix would do both, it
    needs sign-off. The test of good faith is that a genuine finding survives
    the fix unchanged.
+10. **Never judge a provider on a race.** Any adapter reading after a write,
+    delete or correction must poll for the expected state transition with a
+    timeout, never sleep a fixed interval. If the expected state never
+    arrives, that is a reportable finding with its own latency number — not
+    a silent zero. Three near-miss false findings (`27e9599` reset race, Zep
+    exception swallowing, ~15s extraction latency) all came from this class.
+    Assume every provider is eventually consistent until measured otherwise.
+
+    Note the boundary: adapters confirm **their own writes and deletes** have
+    landed. They must never poll a *query* until a value the ledger expects
+    shows up — that would launder a genuine `missing_current_fact` into a
+    pass. Converge the store, then read once and report what comes back.
 
 ## Conventions
 

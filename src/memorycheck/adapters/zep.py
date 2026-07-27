@@ -38,7 +38,7 @@ import os
 import re
 
 from ..ledger import Scope
-from .base import AdapterError, MemoryAdapter, QueryResult
+from .base import AdapterError, MemoryAdapter, QueryResult, poll_until
 
 # Ceiling on results pulled back per query — a safety bound, not a relevance
 # filter. Too low would silently drop the current fact and fake a pass.
@@ -46,6 +46,15 @@ _SEARCH_LIMIT = 50
 
 # Episodes are the raw ingest log; a scenario writes a handful per scope.
 _EPISODE_FETCH = 100
+
+# Zep ingests asynchronously: an episode is queued, then an LLM extracts edges
+# from it. Queries read *edges*, so a write is only confirmed once its edge
+# exists — confirming the episode alone would still leave the query racing
+# extraction. Mem0's comparable pipeline measured ~15s, and a graph build is
+# unlikely to be faster, so the ceiling is generous (invariant 10).
+_EXTRACTION_TIMEOUT = 120.0
+_DELETE_TIMEOUT = 60.0
+_CONVERGE_INTERVAL = 1.0
 
 
 def _slug(text: str) -> str:
@@ -145,12 +154,27 @@ class ZepAdapter(MemoryAdapter):
         self._namespace = namespace or "default"
         self._known_graphs.clear()
         prefix = self._prefix()
-        for graph_id in self._list_graph_ids():
-            if graph_id.startswith(prefix):
-                try:
-                    self._client.graph.delete(graph_id)
-                except Exception:  # noqa: BLE001 - already gone is fine
-                    pass
+        doomed = [g for g in self._list_graph_ids() if g.startswith(prefix)]
+        for graph_id in doomed:
+            try:
+                self._client.graph.delete(graph_id)
+            except Exception:  # noqa: BLE001 - already gone is fine
+                pass
+        if not doomed:
+            return
+        cleared, waited = poll_until(
+            lambda: not [
+                g for g in self._list_graph_ids() if g.startswith(prefix)
+            ],
+            timeout=_DELETE_TIMEOUT,
+            interval=_CONVERGE_INTERVAL,
+        )
+        if not cleared:
+            raise AdapterError(
+                f"zep reset: graphs under {prefix!r} survived {waited:.1f}s "
+                "— refusing to run, since leftovers would be scored against "
+                "the provider"
+            )
 
     def write(
         self, scope: Scope, key: str, value: str, ttl_steps: int | None = None
@@ -169,6 +193,28 @@ class ZepAdapter(MemoryAdapter):
             # A dropped write must abort the run, never pass silently — the
             # missing value would otherwise be scored against the provider.
             raise AdapterError(f"zep write failed for key {key!r}: {_why(e)}") from e
+
+        # Wait for extraction to produce a *live* edge carrying the value —
+        # the layer query() reads. Confirming the episode instead would leave
+        # the next query racing the extractor and score the gap as a missing
+        # current fact (invariant 10).
+        landed, waited = poll_until(
+            lambda: any(
+                value in (getattr(e_, "fact", "") or "")
+                for e_ in self._edges(graph_id)
+                if self._live(e_)
+            ),
+            timeout=_EXTRACTION_TIMEOUT,
+            interval=_CONVERGE_INTERVAL,
+        )
+        if not landed:
+            raise AdapterError(
+                f"zep write for key {key!r} produced no live edge carrying the "
+                f"value after {waited:.1f}s. Either extraction is slower than "
+                "the ceiling or it does not preserve the literal value — both "
+                "are findings to report with this latency, not to score as a "
+                "missing fact"
+            )
 
     def delete(self, scope: Scope, key: str) -> None:
         """Remove a key's source episodes and every edge derived from them.
@@ -192,6 +238,30 @@ class ZepAdapter(MemoryAdapter):
                 self._safe_delete(self._client.graph.edge.delete, edge.uuid_)
         for ep_uuid in doomed:
             self._safe_delete(self._client.graph.episode.delete, ep_uuid)
+
+        # Confirm the removal before the runner queries, or a still-in-flight
+        # delete surfaces as P1 deletion residue that we manufactured.
+        gone, waited = poll_until(
+            lambda: not any(
+                self._is_key(content, key) for _, content in self._episodes(graph_id)
+            )
+            and not (
+                doomed
+                & {
+                    ep
+                    for e_ in self._edges(graph_id)
+                    for ep in (getattr(e_, "episodes", None) or [])
+                }
+            ),
+            timeout=_DELETE_TIMEOUT,
+            interval=_CONVERGE_INTERVAL,
+        )
+        if not gone:
+            raise AdapterError(
+                f"zep delete for key {key!r} had not taken effect after "
+                f"{waited:.1f}s — reporting this rather than scoring the "
+                "surviving value as deletion residue"
+            )
 
     def query(self, scope: Scope, prompt: str, seed: int = 0) -> QueryResult:
         graph_id = self._graph_id(scope)

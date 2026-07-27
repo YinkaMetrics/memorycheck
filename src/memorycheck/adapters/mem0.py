@@ -34,23 +34,41 @@ import re
 import time
 
 from ..ledger import Scope
-from .base import AdapterError, MemoryAdapter, QueryResult
+from .base import AdapterError, MemoryAdapter, QueryResult, poll_until
 
 # Cap on how many memories a scoped query pulls back. Scenarios hold a handful
 # of facts per scope; this is a safety ceiling, not a relevance filter — we do
 # not want a low top_k to silently drop the current fact and fake a pass.
 _SEARCH_TOP_K = 100
 
-# See reset(): Mem0 deletes asynchronously, so a namespace that actually had
-# residue must be confirmed empty before we write into it again.
-_RESET_POLL_ATTEMPTS = 10
-_RESET_POLL_SECONDS = 1.0
-_RESET_SETTLE_SECONDS = 2.0
+# Mem0 applies writes and deletes asynchronously, so every mutation is
+# confirmed by polling for its own effect before returning (invariant 10).
+# Measured behaviour: writes land sub-second, deletes take a few seconds; the
+# ceilings are generous so a slow day is waited out rather than mis-scored.
+_CONVERGE_TIMEOUT = 30.0
+_CONVERGE_INTERVAL = 0.5
 
 
 def _slug(text: str) -> str:
     """Collapse arbitrary text to a Mem0-safe identifier fragment."""
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_") or "x"
+
+
+def _call(what: str, fn, *args, **kwargs):
+    """Invoke a Mem0 SDK call, turning any failure into a legible AdapterError.
+
+    Every call here is a hard dependency of the measurement: a failed read is
+    not an empty store and a failed write is not a forgetful provider. Wrapping
+    them means a run aborts with a stated reason — quota exhausted, credential
+    rejected, service down — instead of dying opaquely or, worse, degrading
+    into numbers that get read as findings about the provider.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:  # noqa: BLE001
+        status = getattr(e, "status_code", None)
+        detail = f"HTTP {status}: " if status else f"{e.__class__.__name__}: "
+        raise AdapterError(f"mem0 {what} failed — {detail}{str(e)[:300]}") from e
 
 
 class Mem0Adapter(MemoryAdapter):
@@ -105,39 +123,85 @@ class Mem0Adapter(MemoryAdapter):
         app_id = self._app_id()
         if not self._namespace_rows(app_id):
             return  # nothing to clear, so nothing to race
-        self._client.delete_all(app_id=app_id)
-        for _ in range(_RESET_POLL_ATTEMPTS):
-            time.sleep(_RESET_POLL_SECONDS)
-            if not self._namespace_rows(app_id):
-                break
-        # The namespace reads empty, but the delete may still be settling
-        # server-side; a short margin keeps the following write safe.
-        time.sleep(_RESET_SETTLE_SECONDS)
+        _call("reset delete_all", self._client.delete_all, app_id=app_id)
+        cleared, waited = poll_until(
+            lambda: not self._namespace_rows(app_id),
+            timeout=_CONVERGE_TIMEOUT,
+            interval=_CONVERGE_INTERVAL,
+        )
+        if not cleared:
+            raise AdapterError(
+                f"mem0 reset: namespace {app_id!r} still holds memories after "
+                f"{waited:.1f}s — refusing to run, since leftovers would be "
+                "scored against the provider"
+            )
 
     def write(
         self, scope: Scope, key: str, value: str, ttl_steps: int | None = None
     ) -> None:
         # ttl_steps is intentionally ignored: supports_ttl is False, so the
         # runner reports expiry NOT_TESTED rather than trusting wall-clock TTL.
-        self._client.add(
+        _call(
+            "write",
+            self._client.add,
             f"{key}: {value}",
             user_id=self._user_id(scope),
             app_id=self._app_id(),
             metadata={"key": key},
             infer=False,
         )
+        # Confirm the write landed before the runner queries. Without this the
+        # next query could race ingestion and the missing value would be scored
+        # against the provider (invariant 10).
+        landed, waited = poll_until(
+            lambda: any(
+                value in (m.get("memory") or "") for m in self._scope_memories(scope)
+            ),
+            timeout=_CONVERGE_TIMEOUT,
+            interval=_CONVERGE_INTERVAL,
+        )
+        if not landed:
+            raise AdapterError(
+                f"mem0 write for key {key!r} was not retrievable after "
+                f"{waited:.1f}s — the store did not accept the write, so no "
+                "result from this run would be meaningful"
+            )
 
     def delete(self, scope: Scope, key: str) -> None:
         # No key concept in Mem0: fetch this scope's memories, keep the ones
         # tagged with our metadata key, and delete them by id.
-        for mem in self._scope_memories(scope):
-            if (mem.get("metadata") or {}).get("key") == key:
-                mem_id = mem.get("id")
-                if mem_id:
-                    self._client.delete(mem_id)
+        doomed = [
+            m.get("id")
+            for m in self._scope_memories(scope)
+            if (m.get("metadata") or {}).get("key") == key and m.get("id")
+        ]
+        for mem_id in doomed:
+            _call("delete", self._client.delete, mem_id)
+        if not doomed:
+            return
+        # Confirm the delete landed. A query issued while the delete is still
+        # in flight would see the value and be scored as deletion residue —
+        # a P1 finding manufactured by our own impatience (invariant 10).
+        gone, waited = poll_until(
+            lambda: not [
+                m
+                for m in self._scope_memories(scope)
+                if (m.get("metadata") or {}).get("key") == key
+            ],
+            timeout=_CONVERGE_TIMEOUT,
+            interval=_CONVERGE_INTERVAL,
+        )
+        if not gone:
+            raise AdapterError(
+                f"mem0 delete for key {key!r} had not taken effect after "
+                f"{waited:.1f}s — reporting this rather than scoring the "
+                "surviving value as deletion residue"
+            )
 
     def query(self, scope: Scope, prompt: str, seed: int = 0) -> QueryResult:
-        resp = self._client.search(
+        resp = _call(
+            "query search",
+            self._client.search,
             prompt,
             filters={"user_id": self._user_id(scope)},
             top_k=_SEARCH_TOP_K,
@@ -159,12 +223,18 @@ class Mem0Adapter(MemoryAdapter):
     # ---------------------------------------------------------------- helpers
 
     def _scope_memories(self, scope: Scope) -> list[dict]:
-        resp = self._client.get_all(filters={"user_id": self._user_id(scope)})
+        resp = _call(
+            "scope read",
+            self._client.get_all,
+            filters={"user_id": self._user_id(scope)},
+        )
         return self._results(resp)
 
     def _namespace_rows(self, app_id: str) -> list[dict]:
         """Everything stored under this run's namespace, across all scopes."""
-        return self._results(self._client.get_all(filters={"app_id": app_id}))
+        return self._results(
+            _call("namespace read", self._client.get_all, filters={"app_id": app_id})
+        )
 
     @staticmethod
     def _results(resp) -> list[dict]:
