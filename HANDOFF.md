@@ -324,6 +324,106 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-27 — Task 3d: invariant 10 (never judge a provider on a race)
+
+### 1. What shipped
+
+Invariant 10 added to `CLAUDE.md`, plus the audit and remediation it implies —
+an invariant the code violates is worse than no invariant.
+
+`poll_until(predicate, timeout, interval) -> (converged, seconds)` in
+`adapters/base.py`: checks immediately (a synchronous provider pays nothing),
+then polls, and returns the elapsed time so a failure to converge is reportable
+with its latency rather than as a silent zero.
+
+**Audit found four violation classes, all now fixed:**
+
+| Adapter | Was | Now |
+|---|---|---|
+| `mem0.reset` | polled, then a fixed 2s "settle" sleep | polls until the namespace reads empty; aborts with latency if it never does |
+| `mem0.write` | no confirmation — next query could race ingestion | polls until the value is retrievable |
+| `mem0.delete` | no confirmation — next query could see a doomed value | polls until the key's memories are gone |
+| `zep.write` | no confirmation, and queries read **edges** | polls until a *live edge* carries the value, i.e. the layer `query()` reads |
+| `zep.delete` / `zep.reset` | fire and hope | poll until episodes/edges/graphs are actually gone |
+
+Every non-convergence raises `AdapterError` with the measured wait, aborting
+the run instead of producing a figure.
+
+**The boundary is written into the invariant and pinned by a test.** Adapters
+confirm *their own* writes and deletes. They must never poll a *query* until a
+value the ledger expects appears — that would launder a genuine
+`missing_current_fact` into a pass. `test_convergence.py` includes the case
+where a provider acknowledges a write then loses it: `query()` must report the
+absence, not wait for it to come back.
+
+### 2. Findings
+
+The Zep fix is the one that matters most, and it is pre-emptive rather than
+reactive. Zep queries read extracted **edges**, not raw episodes, and
+extraction is an LLM job — Mem0's comparable pipeline measured **~15s**. The
+adapter previously wrote and returned immediately, so the runner's next query
+would very likely have raced extraction and produced `missing_current_fact`
+across the entire pack. That would have been a fabricated headline finding
+against Zep on the very first live run. HANDOFF assumption 5 called this the
+likeliest failure; invariant 10 closes it before contact.
+
+Live re-verification on Mem0 after the change: individual scenarios return
+identical results (`001`: stale_reuse 1/1, deletion_residue 0/1; `002`:
+deletion_residue 0/1), so convergence polling removes races without altering
+what Mem0 reports. A full 15 × 2 regen was attempted and **failed** — see FOR
+STRATEGY; the published figures are still the pre-change run.
+
+### 3. Decisions
+
+- **Helper lives on the adapter base**, so every future adapter converges the
+  same way rather than each inventing its own sleep.
+- **Zep confirms at the edge layer, not the episode layer.** Confirming the
+  episode would still leave the query racing the extractor — right-looking and
+  useless.
+- **Non-convergence aborts rather than degrading.** A partial run that looks
+  like a result is exactly what invariant 3 (NOT_TESTED over silent pass)
+  exists to prevent.
+- **Timeouts sized per provider**: Mem0 30s, Zep 120s for extraction and 60s
+  for deletes, since a graph build is unlikely to beat a flat store.
+
+### 4. FOR STRATEGY
+
+- **Convergence polling costs quota.** Each confirmed write adds at least one
+  read, and Mem0 meters reads. The account is at ~217/1000 remaining for this
+  period (resets 2026-08-01) after today's runs. This is now the binding
+  constraint on re-running the full pack, and it strengthens the smoke/full
+  tiering ruling further: correctness costs API calls, so the full pack should
+  run nightly rather than per-commit.
+- **The committed `report_mem0.json` predates this change, and the regen
+  failed.** A 15 × 2 regen was attempted, consumed ~83 quota units and wrote
+  nothing — it aborted after emitting a single line, the signature of an
+  `AdapterError`. Individual scenarios run clean before and after, so the
+  adapter is not broken generally; the cause is undiagnosed. Quota is now ~71
+  of 1000 until 2026-08-01, so it was not chased with further blind runs.
+
+  **The published figures remain the 15:58 UTC run** and are unchanged in
+  every per-scenario re-check, but they were produced by the pre-invariant-10
+  adapter. Do not describe them as produced by current `main`.
+
+  Immediate consequence: every Mem0 SDK call is now wrapped in a legible
+  `AdapterError`. The failure was opaque precisely because it was not, which
+  is what cost the diagnosis. Next full run should either succeed or say why.
+
+  Recommend regenerating when quota resets, and adding the producing adapter
+  commit to the report header regardless — evidence should name the code that
+  produced it.
+- **Quota is now the practical limit on verification, not time.** Measured
+  ~53 units per 15-scenario seed with convergence polling (each confirmed
+  write adds a read). A 2-seed run is ~106 of a 1000-unit period. Budget it.
+
+### 5. Next
+
+Unchanged: Zep credential, then LangGraph. Invariant 10 makes the first live
+Zep run substantially more likely to produce a real measurement rather than a
+latency artifact.
+
+---
+
 ## 2026-07-27 — Task 3c: pre-launch blockers
 
 Three blockers cleared before external posting.
