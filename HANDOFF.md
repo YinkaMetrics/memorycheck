@@ -324,6 +324,94 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-27 — Rulings on Task 3e, and the experiment armed for 2026-08-01
+
+### Rulings recorded
+
+1. **Rescope replay unchanged.** Identical-text re-add stays. Concealing
+   provider behaviour without sign-off is forbidden and sign-off is withheld.
+   No code changed.
+2. **012 behaviour not published.** Mechanism unnamed, no claim made. The
+   provenance notes in `README.md` and the report preamble were tightened
+   accordingly: they now say the run aborted for a reason not yet established,
+   **explicitly not attributed to Mem0 or to this harness**. Previously they
+   said "a write that stayed unretrievable for 30s", which a reader could have
+   taken as a claim about the provider.
+3. **External launch HELD** until a clean full 15 × 2 regen on current `main`,
+   earliest 2026-08-01 when SEARCH quota resets. Nothing external ships first.
+4. Discriminating experiment written — below.
+5. **No further Mem0 calls.** Priority is Zep verification once a credential
+   exists, then LangGraph.
+6. Per-run SEARCH cost documented in the README adapter section.
+
+### The experiment: `diagnostics/readd_after_delete.py`
+
+Written and validated, **not run** — it needs live calls and SEARCH is at 0.
+Placed in `diagnostics/`, not `examples/`, because `examples/` holds repros of
+*published* findings and this claims nothing.
+
+Three arms, with the reading of each stated in the file **before** any run, so
+the interpretation cannot be fitted to whatever comes back:
+
+| Arm | Procedure | Isolates |
+|---|---|---|
+| (a) `a_identical` | delete, re-add identical text | baseline; expected to reproduce the abort |
+| (b) `b_varied` | delete, re-add varied text | content-level deduplication |
+| (c) `c_settle_then_identical` | delete, poll until search reads empty, wait a further 60s, re-add identical text | whether deletion keeps reaping after it stops being observable |
+
+**Validated offline against three simulated providers** — no quota spent — and
+the arms discriminate cleanly:
+
+| Simulated behaviour | (a) | (b) | (c) |
+|---|---|---|---|
+| healthy | visible | visible | visible |
+| content dedup, permanent | **lost** | visible | **lost** |
+| delete keeps reaping, expires | **lost** | visible | **visible** |
+
+The third row is the signature that matters: (a) fails and (c) succeeds means
+**confirming a delete by polling until empty is insufficient** — deletion
+continues to reap writes after it has stopped being observable through search.
+That would invalidate the delete-confirmation strategy invariant 10 introduced,
+and would hit any customer doing delete-then-re-add.
+
+**Estimated SEARCH cost, printed by the script before it spends anything:**
+
+| Arm | Worst case |
+|---|---|
+| (a) identical | ~51 units |
+| (b) varied | ~9 units |
+| (c) settle then identical | ~29 units |
+| **Total** | **~89 units** of a 1,000-unit period |
+
+The script reads the live counter first and **refuses to start if the remaining
+quota is below the estimate** — a run that dies partway proves nothing and
+spends the remainder. Poll interval is deliberately 5s rather than the
+adapter's 0.5s: each poll is a metered SEARCH call, and a failing arm at 0.5s
+would burn ~60 units alone, which is how the original investigation exhausted
+the quota. It also refuses to conclude from a single execution.
+
+### Cost documentation (ruling 6)
+
+README now carries a "What a run costs you" table: `SEARCH` 1,000/period and
+`ADD` 10,000/period metered independently; measured **~53 SEARCH per seed** for
+the 15-scenario pack, so **~106 for a default 2-seed run**, about a tenth of a
+period. Notes that confirmation reads are the bulk and are not optional, that a
+1,000-unit period allows ~9 full runs, and that the intended shape is smoke
+per commit with the full pack nightly — which is the agreed tiering, now with
+the number attached.
+
+### Next
+
+1. **2026-08-01, quota reset:** run the three arms, twice, before reading
+   anything into them.
+2. Founder ruling on whatever they show.
+3. Full 15 × 2 regen on current `main`; refresh README and preamble provenance.
+4. External launch, not before.
+5. Zep verification is unblocked and independent — it needs a credential, not
+   quota.
+
+---
+
 ## 2026-07-27 — Task 3e: regen failure diagnosed — **STOP, ruling needed**
 
 ### 1. What shipped

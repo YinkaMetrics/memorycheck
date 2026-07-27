@@ -17,9 +17,10 @@ adapter gained the write/delete convergence confirmation required by invariant
 10. Per-scenario re-checks after that change returned identical results, and
 the same figures were reproduced across three runs including one on `mem0ai`
 2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the
-attempt aborted on the rescope scenario with a write that stayed unretrievable
-for 30s, and the account's search quota is exhausted until 2026-08-01, so it
-cannot be re-run before then. See `HANDOFF.md`.
+attempt aborted partway through for a reason not yet established — under
+investigation, and not attributed to Mem0 or to this harness until we know —
+and the account's search quota is exhausted until 2026-08-01, so it cannot be
+re-run before then. See `HANDOFF.md`.
 
 **What the stale_reuse result is not.** It is not a report that Mem0 fails to
 overwrite corrected facts. That is documented, intended design — Mem0's README,

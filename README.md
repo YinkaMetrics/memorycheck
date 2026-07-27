@@ -135,7 +135,7 @@ How the lifecycle maps onto Mem0:
   GATE [fail on <= P2]: FAIL (10 blocking findings)
 ```
 
-**Provenance.** These figures were produced at commit `f230208`, before the adapter gained the write/delete convergence confirmation required by invariant 10. Per-scenario re-checks after that change returned identical results, and the same figures were reproduced across three runs including one on `mem0ai` 2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the attempt aborted on the rescope scenario with a write that stayed unretrievable for 30s, and the account's search quota is now exhausted until 2026-08-01, so it cannot be re-run before then. The pending regeneration and that unresolved abort are tracked in [`HANDOFF.md`](HANDOFF.md).
+**Provenance.** These figures were produced at commit `f230208`, before the adapter gained the write/delete convergence confirmation required by invariant 10. Per-scenario re-checks after that change returned identical results, and the same figures were reproduced across three runs including one on `mem0ai` 2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the attempt aborted partway through, for a reason not yet established — it is under investigation and we are not attributing it to Mem0 or to this harness until we know — and the account's search quota is exhausted until 2026-08-01, so it cannot be re-run before then. Tracked in [`HANDOFF.md`](HANDOFF.md).
 
 Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 
@@ -172,6 +172,26 @@ python examples/repro_correction.py
 ```
 
 Real output from that script is pasted at the bottom of the file. It waits for the correction to become visible before judging anything: with `infer=True` the extraction pipeline took ~15s, and querying earlier returns the superseded value *alone* — a much more dramatic-looking result that is purely an artifact of racing the pipeline. Full suite evidence in [`examples/report_mem0.md`](examples/report_mem0.md).
+
+### What a run costs you
+
+Mem0 meters two independent counters, and this adapter spends the scarcer one.
+
+| Counter | Typical plan allowance | What spends it here |
+|---|---|---|
+| `SEARCH` | 1,000 per billing period | every query, plus each read used to confirm a write or delete landed |
+| `ADD` | 10,000 per billing period | one per `write` |
+
+Measured on the bundled 15-scenario pack: **~53 SEARCH units per seed**, so a
+default 2-seed run costs **~106** — roughly a tenth of a 1,000-unit period.
+Confirmation reads are the bulk of it, and they are not optional: without them
+the harness races the provider and manufactures false failures (invariant 10).
+
+Budget accordingly if you wire this into CI. Running the full pack on every
+commit will exhaust a 1,000-unit period in ~9 runs. The intended shape is a
+small smoke subset per commit and the full pack nightly or per release. Watch
+the `x-quota-remaining` response header; when the counter is exhausted the API
+returns `429` and the run aborts rather than reporting degraded numbers.
 
 Two honest caveats:
 
