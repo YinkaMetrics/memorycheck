@@ -417,18 +417,32 @@ two mechanisms produce the same PASS:
  (ii) the superseded edge is simply absent — the pass is an absence, not a
       correction.
 
-Stage 2b is running to dump every edge with its validity fields and settle
-which. **No claim until it returns.** Reasoning favours (i): the adapter's
-write confirmation waits for a *live* edge carrying each value, so the old
-edge demonstrably existed and was live before the correction was written —
-but that is an argument, not evidence.
+**Stage 2b settled it: mechanism (i), with evidence.**
 
-**If (i) holds, the comparability problem flagged earlier becomes concrete.**
-"Zep passed where Mem0 failed" would be false as stated. The honest form is
-that Zep publishes `invalid_at` and this adapter honours it, while Mem0
-exposes no equivalent signal for its adapter to honour. That is a difference
-in what each provider offers an integrator, not two scores on one test — and
-it is why a single comparative number should not ship.
+```
+old edge: 'This is the starter-legacy-2024 plan.'
+          valid_at=22:33:01  invalid_at=22:39:12  expired_at=22:45:03
+new edge: 'scale-annual-2026 is a plan.'
+          valid_at=22:39:12  invalid_at=None
+```
+
+The old edge's `invalid_at` equals the new edge's `valid_at` to the second:
+Zep superseded the fact at the instant the correction became valid. Extraction
+took 370s and 360s for the two writes, consistent with stage 1's 329s.
+
+**The detail that matters most: `search(scope="edges")` returned BOTH edges,
+including the invalidated one.** The pass is produced jointly — Zep publishes
+accurate invalidation metadata, and this adapter filters on it. An integrator
+who templated search results without checking `invalid_at` would surface the
+stale fact and fail exactly as Mem0 does.
+
+So the correct framing, and the one to use if any comparison is ever
+published: **both providers return the superseded value from search; only Zep
+tells you it is superseded.** The difference is the metadata contract, not
+retrieval behaviour. "Zep passed where Mem0 failed" is false as stated — it
+would credit Zep for something our adapter did with information Mem0 does not
+publish. This is the comparability problem flagged earlier, now concrete, and
+the reason a single comparative number must not ship.
 
 ### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 
