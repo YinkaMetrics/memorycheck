@@ -69,8 +69,9 @@ def _cmd_list_adapters(_: argparse.Namespace) -> int:
     print("  reference:leaky    naive + tenant-only boundary (demo: adds scope leakage)")
     print("  http:CONFIG.yaml   your stack behind a 4-endpoint shim (see adapters/http.py)")
     print("  mem0               hosted Mem0 platform (needs MEM0_API_KEY; pip install '.[mem0]')")
+    print("  zep                hosted Zep platform (needs ZEP_API_KEY; pip install '.[zep]')")
     print("  null               no-memory baseline (used internally for utility delta)")
-    print("\n  roadmap: zep, langgraph")
+    print("\n  roadmap: langgraph")
     return 0
 
 
