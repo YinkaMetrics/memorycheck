@@ -399,8 +399,31 @@ the run. Write failures abort rather than passing silently. This is invariant
   SDK's `NotFoundError`, so offline tests still run where the `zep` extra is
   not installed (CI installs only `[dev]`).
 
+### 3a. Broke CI, then fixed it
+
+Worth recording rather than quietly amending. The guard commit passed locally
+and **failed CI** (3 failed / 30 passed). Cause: `_absent()` checked the SDK's
+`NotFoundError` type first and returned `False` on `ImportError`, skipping the
+status-code check. A dev machine has the `zep` extra installed so it passed;
+**CI installs only `[dev]`**, so every 404 became a hard failure.
+
+Fixed in `f230208`'s successor by checking `status_code` first — it is
+SDK-independent — with a regression test that simulates the import failing.
+Verified in a **clean venv with neither extra installed**, matching CI exactly:
+34 passed, 4 skipped.
+
+Lesson: "tests pass locally" means nothing for optional-extra code paths. The
+dev environment has every extra installed and CI has none, so the two are
+systematically different. Verify optional-dependency behaviour in a bare venv
+before pushing, not on the machine where everything is present.
+
 ### 4. FOR STRATEGY
 
+- **CI does not exercise the extras at all.** No job installs `[mem0]` or
+  `[zep]`, so any adapter code path guarded by an SDK import is only covered
+  on a developer machine. A second CI job installing all extras (still without
+  credentials, so live tests keep skipping) would have caught the above before
+  push. Cheap, and it grows more valuable per adapter.
 - **The report_mem0.md preamble fragility bit immediately.** Regenerating the
   report to pick up the new JSON field wiped the hand-written framing and it
   had to be re-applied by hand. Second occurrence; it will eventually ship
