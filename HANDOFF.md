@@ -444,6 +444,62 @@ would credit Zep for something our adapter did with information Mem0 does not
 publish. This is the comparability problem flagged earlier, now concrete, and
 the reason a single comparative number must not ship.
 
+### Stage 3 — assumptions 3 and 4 done; **assumption 2 not verified**
+
+**Assumption 3: CONFIRMED.** `graph.create` on an existing id raises
+`BadRequestError` 400 rather than clobbering, so the adapter swallowing that
+exception is correct.
+
+**Assumption 4: latent defect found and fixed.** Zep paginates graph listing
+and reports `total_count`; `reset()` made a single `page_size=100` call. Fine
+at today's 6 graphs, but one full 15 × 2 run creates ~45 graphs (one per
+namespace/tenant/user), so an account crosses a page within a few runs. A
+`reset()` that cannot see a graph cannot clear it, and the residue would later
+be scored as leakage or deletion residue — a false FAIL manufactured by us.
+Now pages until `total_count`. The offline fake had been returning everything
+in one page, i.e. validating a fiction; it now paginates, and a test forces a
+2-row page to prove `reset()` still clears everything.
+
+**Assumption 2: REJECTED AS VACUOUS, not passed.** The probe reported
+"removed from retrieval", but the log shows why that is worthless:
+
+```
+assumption 2: waiting for extraction...
+              episodes=1 edges=0        <- no edge ever created
+              after delete: edges_listed=0 search_returned=0
+              -> removed from retrieval
+```
+
+Extraction never produced an edge within 900s, so the probe deleted an episode
+that had no derived edge and observed nothing in retrieval. You cannot show
+deletion removes a fact when no fact existed. Re-running with a 30-minute
+ceiling and `processed`-flag tracking so a stall is distinguishable from a
+slow success.
+
+### Extraction latency is variable, and that threatens the whole approach
+
+| sample | latency |
+|---|---|
+| stage 1c | 329s |
+| stage 2b (first write) | 370s |
+| stage 2b (second write) | 360s |
+| stage 3 | **>900s, no edge** |
+
+The first three clustered tightly, which is exactly why 900s looked like
+2.7x headroom. The fourth exceeded it. Consequences:
+
+- **`_EXTRACTION_TIMEOUT = 900` is unsound.** It was set from three samples
+  that happened to agree. A long write in a full run would abort it.
+- **The ~5.5h stage-4 estimate is a floor, not an estimate.** It assumed
+  ~330s per episode; at variable latency with occasional >900s stalls the true
+  figure is unknown and could be far worse.
+- **The write-confirmation strategy may not suit Zep at all.** Invariant 10
+  requires confirming a write before reading, but confirmation cost here is
+  unbounded in practice. This is not a Zep defect — a knowledge-graph build is
+  legitimately heavier than a key-value write — it is a question about whether
+  a synchronous behavioural gate is the right instrument for this class of
+  provider. **Flagging FOR STRATEGY rather than resolving it.**
+
 ### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 
 Three probes, each correcting the previous one's misreading.
