@@ -13,6 +13,7 @@ import argparse
 import sys
 
 from .adapters import load_adapter
+from .adapters.base import AdapterError
 from .judge import load_judge
 from .ledger import ScenarioError
 from .oracle import evaluate
@@ -67,8 +68,9 @@ def _cmd_list_adapters(_: argparse.Namespace) -> int:
     print("  reference:naive    ignores supersession, deletion and TTL (demo: fails P1/P2)")
     print("  reference:leaky    naive + tenant-only boundary (demo: adds scope leakage)")
     print("  http:CONFIG.yaml   your stack behind a 4-endpoint shim (see adapters/http.py)")
+    print("  mem0               hosted Mem0 platform (needs MEM0_API_KEY; pip install '.[mem0]')")
     print("  null               no-memory baseline (used internally for utility delta)")
-    print("\n  roadmap: mem0, zep, langgraph")
+    print("\n  roadmap: zep, langgraph")
     return 0
 
 
@@ -104,6 +106,9 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(args.func(args))
     except ScenarioError as e:
         print(f"scenario error: {e}", file=sys.stderr)
+        sys.exit(2)
+    except AdapterError as e:
+        print(f"adapter error: {e}", file=sys.stderr)
         sys.exit(2)
 
 

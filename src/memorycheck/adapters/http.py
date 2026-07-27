@@ -32,10 +32,10 @@ from pathlib import Path
 import yaml
 
 from ..ledger import Scope
-from .base import MemoryAdapter, QueryResult
+from .base import AdapterError, MemoryAdapter, QueryResult
 
 
-class HTTPAdapterError(Exception):
+class HTTPAdapterError(AdapterError):
     pass
 
 

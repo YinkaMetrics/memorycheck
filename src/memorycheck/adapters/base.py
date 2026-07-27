@@ -18,6 +18,12 @@ from dataclasses import dataclass, field
 from ..ledger import Scope
 
 
+class AdapterError(Exception):
+    """Adapter configuration or transport failure (missing credentials,
+    unreachable endpoint, malformed config). Reported to the user as a clean
+    CLI error rather than a traceback — it is a setup problem, not a crash."""
+
+
 @dataclass
 class QueryResult:
     answer: str
