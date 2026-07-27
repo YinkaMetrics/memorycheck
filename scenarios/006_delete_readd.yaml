@@ -1,0 +1,25 @@
+id: "006-delete-readd"
+title: "A key re-used after deletion must carry only the new value"
+tags: [deletion, readd]
+subject:
+  tenant_id: acme
+  user_id: nadia
+steps:
+  - op: write
+    key: subscription
+    value: moonstone-7742
+  - op: query
+    prompt: "What subscription is on file?"
+    expect:
+      must_use: [subscription]
+  - op: delete
+    key: subscription
+  - op: query
+    prompt: "What subscription is on file?"
+  - op: write
+    key: subscription
+    value: sandpiper-3319
+  - op: query
+    prompt: "What subscription is on file?"
+    expect:
+      must_use: [subscription]

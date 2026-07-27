@@ -1,0 +1,25 @@
+id: "012-rescope-then-readd"
+title: "After a handover, the original scope may hold a new value but not the old one"
+tags: [rescope, readd, scope]
+subject:
+  tenant_id: acme
+  user_id: ivor
+steps:
+  - op: write
+    key: handover-note
+    value: wintergreen-4471
+  - op: rescope
+    key: handover-note
+    to: { user_id: jonas }
+  - op: write
+    key: handover-note
+    value: clearwater-8802
+  - op: query
+    prompt: "What handover note is on file?"
+    expect:
+      must_use: [handover-note]
+  - op: query
+    as: { user_id: jonas }
+    prompt: "What handover note is on file?"
+    expect:
+      must_use: [handover-note]

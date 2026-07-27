@@ -1,0 +1,24 @@
+id: "014-ttl-sibling-key"
+title: "One key expiring must not take a non-expiring sibling with it"
+tags: [expiry, ttl, multi-key]
+subject:
+  tenant_id: acme
+  user_id: lucia
+steps:
+  - op: write
+    key: flash-offer
+    value: emberglow-5183
+    ttl_steps: 2
+  - op: write
+    key: account-owner
+    value: northgate-9027
+  - op: query
+    prompt: "Is there a flash offer, and who is the account owner?"
+    expect:
+      must_use: [flash-offer, account-owner]
+  - op: advance_time
+    steps: 3
+  - op: query
+    prompt: "Is the flash offer still valid, and who is the account owner?"
+    expect:
+      must_use: [account-owner]

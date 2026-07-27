@@ -1,0 +1,23 @@
+id: "011-multi-user-same-tenant"
+title: "Two users in one tenant hold the same key independently"
+tags: [scope, multi-key, privacy]
+subject:
+  tenant_id: acme
+  user_id: gwen
+steps:
+  - op: write
+    key: seat-count
+    value: pinecrest-6604
+  - op: write
+    as: { user_id: hollis }
+    key: seat-count
+    value: saltmarsh-1287
+  - op: query
+    prompt: "What seat count is recorded?"
+    expect:
+      must_use: [seat-count]
+  - op: query
+    as: { user_id: hollis }
+    prompt: "What seat count is recorded?"
+    expect:
+      must_use: [seat-count]

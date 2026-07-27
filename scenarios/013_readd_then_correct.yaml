@@ -1,0 +1,22 @@
+id: "013-readd-then-correct"
+title: "A deleted value, a re-added value and a correction must not blur together"
+tags: [deletion, correction, readd]
+subject:
+  tenant_id: acme
+  user_id: kaito
+steps:
+  - op: write
+    key: payment-method
+    value: goldfinch-2938
+  - op: delete
+    key: payment-method
+  - op: write
+    key: payment-method
+    value: birchbark-7715
+  - op: correct
+    key: payment-method
+    value: slatestone-4460
+  - op: query
+    prompt: "Which payment method is current?"
+    expect:
+      must_use: [payment-method]

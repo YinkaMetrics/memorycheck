@@ -1,0 +1,19 @@
+id: "009-delete-sibling-isolation"
+title: "Deleting one key must not remove or expose its siblings"
+tags: [deletion, multi-key]
+subject:
+  tenant_id: acme
+  user_id: quinn
+steps:
+  - op: write
+    key: renewal-window
+    value: harborlight-5529
+  - op: write
+    key: escalation-path
+    value: flintlock-3096
+  - op: delete
+    key: renewal-window
+  - op: query
+    prompt: "What escalation path applies, and is there a renewal window?"
+    expect:
+      must_use: [escalation-path]

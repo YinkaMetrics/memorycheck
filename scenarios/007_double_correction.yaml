@@ -1,0 +1,24 @@
+id: "007-double-correction"
+title: "Two corrections in sequence leave only the newest value live"
+tags: [correction, stale]
+subject:
+  tenant_id: acme
+  user_id: omar
+steps:
+  - op: write
+    key: billing-tier
+    value: larkspur-8815
+  - op: correct
+    key: billing-tier
+    value: thistledown-2204
+  - op: query
+    prompt: "Which billing tier applies?"
+    expect:
+      must_use: [billing-tier]
+  - op: correct
+    key: billing-tier
+    value: cobblestone-9573
+  - op: query
+    prompt: "Which billing tier applies?"
+    expect:
+      must_use: [billing-tier]

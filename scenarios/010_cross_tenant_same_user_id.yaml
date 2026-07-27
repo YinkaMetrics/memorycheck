@@ -1,0 +1,17 @@
+id: "010-cross-tenant-same-user-id"
+title: "An identical user_id in another tenant is a different subject"
+tags: [scope, tenant, privacy]
+subject:
+  tenant_id: acme
+  user_id: dana
+steps:
+  - op: write
+    key: contract-note
+    value: ironwood-7350
+  - op: query
+    prompt: "Is there a contract note for this user?"
+    expect:
+      must_use: [contract-note]
+  - op: query
+    as: { tenant_id: globex }
+    prompt: "Is there a contract note for this user?"

@@ -1,0 +1,20 @@
+id: "008-multi-key-interference"
+title: "Correcting one key must not disturb another key's current value"
+tags: [correction, multi-key]
+subject:
+  tenant_id: acme
+  user_id: pilar
+steps:
+  - op: write
+    key: shipping-window
+    value: zephyr-6621
+  - op: write
+    key: support-plan
+    value: driftwood-1180
+  - op: correct
+    key: shipping-window
+    value: quicksilver-4408
+  - op: query
+    prompt: "What shipping window and support plan are set?"
+    expect:
+      must_use: [shipping-window, support-plan]

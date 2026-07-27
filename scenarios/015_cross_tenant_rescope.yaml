@@ -1,0 +1,20 @@
+id: "015-cross-tenant-rescope"
+title: "A fact moved to another tenant must leave the origin tenant entirely"
+tags: [rescope, tenant, scope, privacy]
+subject:
+  tenant_id: acme
+  user_id: kerry
+steps:
+  - op: write
+    key: audit-trail
+    value: sablewood-3364
+  - op: rescope
+    key: audit-trail
+    to: { tenant_id: globex, user_id: lior }
+  - op: query
+    prompt: "What audit trail is retained for this user?"
+  - op: query
+    as: { tenant_id: globex, user_id: lior }
+    prompt: "What audit trail is retained for this user?"
+    expect:
+      must_use: [audit-trail]
