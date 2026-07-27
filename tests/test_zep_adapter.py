@@ -61,6 +61,18 @@ class _Ns:
         self.__dict__.update(kw)
 
 
+class FakeNotFound(Exception):
+    """Mimics Zep's 404 for a graph that does not exist.
+
+    Carries `status_code` rather than subclassing the SDK's NotFoundError so
+    these tests keep running where the zep extra is not installed — CI installs
+    only [dev]. The adapter treats a 404 as legitimately-empty and anything
+    else as a failure that must abort.
+    """
+
+    status_code = 404
+
+
 class FakeZepClient:
     """Mimics zep_cloud's graph namespace: text goes in as an episode, and one
     derived edge is created per episode (Zep would extract via LLM; the shape
@@ -113,19 +125,19 @@ class FakeZepClient:
     def _episodes_by_graph(self, graph_id, *, lastn=None, **kw):
         g = self.graphs.get(graph_id)
         if g is None:
-            raise RuntimeError("no such graph")
+            raise FakeNotFound()
         return _Ns(episodes=list(g["episodes"]))
 
     def _edges_by_graph(self, graph_id, *, limit=None, **kw):
         g = self.graphs.get(graph_id)
         if g is None:
-            raise RuntimeError("no such graph")
+            raise FakeNotFound()
         return list(g["edges"])
 
     def _search(self, *, graph_id, query, scope=None, limit=None, **kw):
         g = self.graphs.get(graph_id)
         if g is None:
-            raise RuntimeError("no such graph")
+            raise FakeNotFound()
         return _Ns(edges=list(g["edges"]))
 
     # -- deletes

@@ -34,10 +34,28 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+UNVERIFIED_BANNER = (
+    "UNVERIFIED ADAPTER — never run against the live provider. "
+    "No results from this run should be quoted as a measurement."
+)
+
+
+def _warn_if_unverified(adapter) -> None:
+    if not getattr(adapter, "unverified", False):
+        return
+    line = "=" * 72
+    print(f"\n{line}\n  WARNING: {UNVERIFIED_BANNER}", file=sys.stderr)
+    note = getattr(adapter, "unverified_note", "")
+    if note:
+        print(f"  adapter={adapter.name}: {note}", file=sys.stderr)
+    print(f"{line}\n", file=sys.stderr)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     scenarios = load_dir(args.scenarios)
     adapter = load_adapter(args.adapter)
     judge = load_judge(args.judge)
+    _warn_if_unverified(adapter)
 
     suite = run_suite(
         scenarios, adapter, judge, seeds=args.seeds, baseline=not args.no_baseline
@@ -53,6 +71,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         seeds=args.seeds,
         scenario_count=len(scenarios),
         fail_on=args.fail_on,
+        unverified=getattr(adapter, "unverified", False),
+        unverified_note=getattr(adapter, "unverified_note", ""),
     )
     print_summary(summary)
     write_reports(summary, args.report_json, args.report_md)

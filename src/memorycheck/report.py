@@ -48,6 +48,8 @@ def build_summary(
     seeds: int,
     scenario_count: int,
     fail_on: str,
+    unverified: bool = False,
+    unverified_note: str = "",
 ) -> dict:
     checks = {c: _rate(findings, c) for c in RATE_CHECKS}
     ok, total = current_fact_accuracy(findings)
@@ -74,6 +76,11 @@ def build_summary(
         "tool": {"name": "memorycheck", "version": __version__},
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "adapter": adapter_name,
+        # Travels with the evidence: a figure produced by an adapter that has
+        # never touched its provider must not be quotable as a measurement,
+        # however it is later copied out of this file.
+        "adapter_unverified": unverified,
+        "adapter_unverified_note": unverified_note if unverified else "",
         "judge": judge_name,
         "seeds": seeds,
         "scenarios": scenario_count,
@@ -116,9 +123,17 @@ def to_markdown(summary: dict) -> str:
     )
     ud = m["memory_utility_delta"]
     ud_str = f"{ud['delta']:+.2f}" if ud["delta"] is not None else "NOT TESTED"
-    lines = [
-        "# memorycheck evidence report",
-        "",
+    lines = ["# memorycheck evidence report", ""]
+    if summary.get("adapter_unverified"):
+        lines += [
+            "> ⚠️ **UNVERIFIED ADAPTER — never run against the live provider.**",
+            "> No results in this report should be quoted as a measurement.",
+        ]
+        if summary.get("adapter_unverified_note"):
+            lines.append(f">")
+            lines.append(f"> {summary['adapter_unverified_note']}")
+        lines.append("")
+    lines += [
         f"- **Adapter:** `{summary['adapter']}`   **Judge:** `{summary['judge']}`",
         f"- **Scenarios:** {summary['scenarios']}   **Seeds:** {summary['seeds']}   "
         f"**Generated:** {summary['generated_at']}",
@@ -190,7 +205,11 @@ def print_summary(summary: dict) -> None:
     for name, value in rows:
         print(f"  {name.ljust(width)}{value}")
     print(f"\n  GATE [fail on <= {summary['gate']['fail_on']}]: {summary['gate']['verdict']} "
-          f"({summary['gate']['blocking_findings']} blocking findings)\n")
+          f"({summary['gate']['blocking_findings']} blocking findings)")
+    if summary.get("adapter_unverified"):
+        print("  ** UNVERIFIED ADAPTER — never run against the live provider; "
+              "do not quote these results. **")
+    print()
 
 
 def write_reports(summary: dict, json_path: str | None, md_path: str | None) -> None:

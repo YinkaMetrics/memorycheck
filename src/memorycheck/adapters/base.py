@@ -34,6 +34,18 @@ class MemoryAdapter(ABC):
     name: str = "base"
     supports_ttl: bool = False
 
+    #: Set True while an adapter has never been executed against its real
+    #: provider. Code written against an SDK's surface is a hypothesis until it
+    #: touches the service — the Mem0 adapter passed every offline test while
+    #: carrying a delete/write race that only appeared live. The runner warns on
+    #: stderr and stamps the report so a number from an unverified adapter can
+    #: never be quoted as a measurement by accident. Clear it only after a live
+    #: run, in the same change that records the evidence.
+    unverified: bool = False
+
+    #: Shown alongside the warning when `unverified` is set.
+    unverified_note: str = ""
+
     def reset(self, namespace: str) -> None:
         """Isolate state for a scenario run. Called once per scenario."""
 

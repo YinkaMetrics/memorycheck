@@ -52,9 +52,45 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
 
 
+def _why(exc: Exception) -> str:
+    """Readable one-liner from a Zep SDK error.
+
+    The SDK's own str() leads with a full header dump, which buries the part
+    that tells you what to fix (`401 unauthorized`) at the end of a long line.
+    """
+    status = getattr(exc, "status_code", None)
+    body = getattr(exc, "body", None)
+    if status is not None:
+        detail = str(body).strip() if body else exc.__class__.__name__
+        return f"HTTP {status}: {detail[:200]}"
+    return f"{exc.__class__.__name__}: {str(exc)[:200]}"
+
+
+def _absent(exc: Exception) -> bool:
+    """True when the error means 'this graph does not exist yet'.
+
+    Everything else — auth, transport, server faults — must NOT be read as an
+    empty memory. Swallowing those would let a broken credential masquerade as
+    a provider that forgot every fact, manufacturing false failures against a
+    real vendor (invariant 9). Absence is legitimately empty; failure is not.
+    """
+    try:
+        from zep_cloud.errors import NotFoundError
+    except ImportError:  # pragma: no cover
+        return False
+    return isinstance(exc, NotFoundError) or getattr(exc, "status_code", None) == 404
+
+
 class ZepAdapter(MemoryAdapter):
     name = "zep"
     supports_ttl = False  # Zep validity is wall-clock; ours is logical
+    unverified = True  # never executed against live Zep — see module docstring
+    unverified_note = (
+        "the zep adapter has never been run against the live Zep service; "
+        "its assumptions (edge facts containing stored values verbatim, "
+        "episode+edge deletion removing a fact, extraction latency) are "
+        "unconfirmed"
+    )
 
     def __init__(self) -> None:
         if not os.environ.get("ZEP_API_KEY"):
@@ -118,11 +154,16 @@ class ZepAdapter(MemoryAdapter):
         # NOT_TESTED rather than leaning on wall-clock validity.
         graph_id = self._graph_id(scope)
         self._ensure_graph(graph_id)
-        self._client.graph.add(
-            graph_id=graph_id,
-            type="text",
-            data=f"{key}: {value}",
-        )
+        try:
+            self._client.graph.add(
+                graph_id=graph_id,
+                type="text",
+                data=f"{key}: {value}",
+            )
+        except Exception as e:  # noqa: BLE001
+            # A dropped write must abort the run, never pass silently — the
+            # missing value would otherwise be scored against the provider.
+            raise AdapterError(f"zep write failed for key {key!r}: {_why(e)}") from e
 
     def delete(self, scope: Scope, key: str) -> None:
         """Remove a key's source episodes and every edge derived from them.
@@ -156,7 +197,9 @@ class ZepAdapter(MemoryAdapter):
                 scope="edges",
                 limit=_SEARCH_LIMIT,
             )
-        except Exception:  # noqa: BLE001 - absent graph reads as empty memory
+        except Exception as e:  # noqa: BLE001
+            if not _absent(e):
+                raise AdapterError(f"zep query failed: {_why(e)}") from e
             return QueryResult(answer="I don't have anything stored about that.")
 
         live = [e for e in (getattr(results, "edges", None) or []) if self._live(e)]
@@ -193,7 +236,9 @@ class ZepAdapter(MemoryAdapter):
             resp = self._client.graph.episode.get_by_graph_id(
                 graph_id, lastn=_EPISODE_FETCH
             )
-        except Exception:  # noqa: BLE001 - no graph yet
+        except Exception as e:  # noqa: BLE001
+            if not _absent(e):
+                raise AdapterError(f"zep episode fetch failed: {_why(e)}") from e
             return []
         return [
             (ep.uuid_, getattr(ep, "content", "") or "")
@@ -207,7 +252,9 @@ class ZepAdapter(MemoryAdapter):
                 self._client.graph.edge.get_by_graph_id(graph_id, limit=_SEARCH_LIMIT)
                 or []
             )
-        except Exception:  # noqa: BLE001 - no graph yet
+        except Exception as e:  # noqa: BLE001
+            if not _absent(e):
+                raise AdapterError(f"zep edge fetch failed: {_why(e)}") from e
             return []
 
     def _list_graph_ids(self) -> list[str]:

@@ -3,7 +3,7 @@ from pathlib import Path
 from memorycheck.adapters import load_adapter
 from memorycheck.judge import load_judge
 from memorycheck.oracle import FAIL, evaluate
-from memorycheck.report import build_summary
+from memorycheck.report import build_summary, to_markdown
 from memorycheck.runner import run_suite
 from memorycheck.scenario import load_dir
 
@@ -54,6 +54,34 @@ def test_leaky_reference_adds_scope_leakage():
     assert "scope_leakage" in failed_checks(summary)
     # P1-only gating still fails: leakage and residue are P1.
     assert summary["gate"]["verdict"] == "FAIL"
+
+
+def test_unverified_flag_is_stamped_into_the_report():
+    # A figure from an adapter that never touched its provider must not be
+    # quotable as a measurement, however it is copied out of the evidence.
+    summary = build_summary(
+        [], [], adapter_name="zep", judge_name="deterministic-v0",
+        seeds=1, scenario_count=1, fail_on="p2",
+        unverified=True, unverified_note="never run against live Zep",
+    )
+    assert summary["adapter_unverified"] is True
+    assert summary["adapter_unverified_note"] == "never run against live Zep"
+    md = to_markdown(summary)
+    assert "UNVERIFIED ADAPTER" in md
+    assert "never run against live Zep" in md
+
+
+def test_verified_adapters_carry_no_unverified_stamp():
+    summary = run("reference:strict")
+    assert summary["adapter_unverified"] is False
+    assert "UNVERIFIED" not in to_markdown(summary)
+
+
+def test_zep_adapter_declares_itself_unverified():
+    from memorycheck.adapters.zep import ZepAdapter
+
+    assert ZepAdapter.unverified is True
+    assert ZepAdapter.unverified_note
 
 
 def test_memory_utility_delta_is_positive_for_working_memory():
