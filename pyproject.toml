@@ -16,7 +16,7 @@ memorycheck = "memorycheck.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-mem0 = ["mem0ai>=2.0.11"]
+mem0 = ["mem0ai>=2.0.14"]
 zep = ["zep-cloud>=3.25.0"]
 
 [tool.setuptools.packages.find]
