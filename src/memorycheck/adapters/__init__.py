@@ -2,9 +2,10 @@
 
   reference:strict | reference:naive | reference:leaky
   http:path/to/config.yaml
+  mem0
   null
 
-Roadmap adapters (mem0, zep, langgraph) register here as they land.
+Roadmap adapters (zep, langgraph) register here as they land.
 """
 
 from __future__ import annotations
@@ -23,11 +24,15 @@ def load_adapter(spec: str) -> MemoryAdapter:
         from .http import HTTPAdapter
 
         return HTTPAdapter(arg)
+    if name == "mem0":
+        from .mem0 import Mem0Adapter
+
+        return Mem0Adapter()
     if name == "null":
         return NullAdapter()
     raise ValueError(
-        f"unknown adapter {name!r} (available: reference, http, null; "
-        "mem0/zep/langgraph are on the roadmap)"
+        f"unknown adapter {name!r} (available: reference, http, mem0, null; "
+        "zep/langgraph are on the roadmap)"
     )
 
 
