@@ -161,6 +161,28 @@ def offline_adapter():
     return adapter
 
 
+def test_absence_detection_works_without_the_zep_sdk(monkeypatch):
+    """CI installs only [dev], so zep_cloud is absent there while present on a
+    dev machine. An earlier version checked the SDK's exception type first and
+    returned False on ImportError, which skipped the status-code check — every
+    404 became a hard failure and the suite passed locally but broke in CI.
+    Simulate the import failing so the two environments cannot diverge again."""
+    import builtins
+
+    from memorycheck.adapters import zep as zep_mod
+
+    real_import = builtins.__import__
+
+    def no_zep(name, *args, **kw):
+        if name.startswith("zep_cloud"):
+            raise ImportError("simulated: zep extra not installed")
+        return real_import(name, *args, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_zep)
+    assert zep_mod._absent(FakeNotFound()) is True, "404 must read as absent"
+    assert zep_mod._absent(RuntimeError("boom")) is False, "other errors must not"
+
+
 def test_ttl_is_declared_unsupported():
     # Zep validity is wall-clock, memorycheck time is logical.
     assert ZepAdapter.supports_ttl is False

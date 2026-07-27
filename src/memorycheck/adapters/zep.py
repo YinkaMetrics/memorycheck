@@ -74,11 +74,16 @@ def _absent(exc: Exception) -> bool:
     a provider that forgot every fact, manufacturing false failures against a
     real vendor (invariant 9). Absence is legitimately empty; failure is not.
     """
+    # Status code first: it is SDK-independent, so this stays correct where the
+    # zep extra is not installed. Checking the exception type first and bailing
+    # out on ImportError would skip this and treat every 404 as a hard failure.
+    if getattr(exc, "status_code", None) == 404:
+        return True
     try:
         from zep_cloud.errors import NotFoundError
-    except ImportError:  # pragma: no cover
+    except ImportError:
         return False
-    return isinstance(exc, NotFoundError) or getattr(exc, "status_code", None) == 404
+    return isinstance(exc, NotFoundError)
 
 
 class ZepAdapter(MemoryAdapter):
