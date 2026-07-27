@@ -391,6 +391,45 @@ Caveat on the number: one measurement, on a project created ~20 minutes
 earlier, so a cold-start component cannot be ruled out. Stage 2 adds data
 points.
 
+### Stage 2 — one scenario, seeds=1: **PASSED**, mechanism under verification
+
+`001-correction-stale-reuse` against live Zep, 702s wall clock:
+
+```
+current_fact_accuracy  100% (2/2)
+stale_reuse            0%  (0/1)
+deletion_residue       0%  (0/1)
+GATE [fail on <= P2]: PASS (0 blocking findings)
+```
+
+**Timeouts confirmed adequate and 329s confirmed representative.** 702s ≈ two
+writes at ~330s plus delete convergence, so the stage-1 latency was not a
+cold-start artifact. `_EXTRACTION_TIMEOUT` at 900s has ~2.7x headroom;
+`_DELETE_TIMEOUT` at 120s sufficed for the one delete observed. Stage 3 tests
+deletion properly.
+
+**Zep passed the correction scenario Mem0 fails 10/10.** That is the
+interesting result, and it is exactly the one not to report on inference —
+two mechanisms produce the same PASS:
+
+  (i) Zep marked the superseded edge `invalid_at` and the adapter filtered it
+      — temporal invalidation genuinely fired;
+ (ii) the superseded edge is simply absent — the pass is an absence, not a
+      correction.
+
+Stage 2b is running to dump every edge with its validity fields and settle
+which. **No claim until it returns.** Reasoning favours (i): the adapter's
+write confirmation waits for a *live* edge carrying each value, so the old
+edge demonstrably existed and was live before the correction was written —
+but that is an argument, not evidence.
+
+**If (i) holds, the comparability problem flagged earlier becomes concrete.**
+"Zep passed where Mem0 failed" would be false as stated. The honest form is
+that Zep publishes `invalid_at` and this adapter honours it, while Mem0
+exposes no equivalent signal for its adapter to honour. That is a difference
+in what each provider offers an integrator, not two scores on one test — and
+it is why a single comparative number should not ship.
+
 ### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 
 Three probes, each correcting the previous one's misreading.
