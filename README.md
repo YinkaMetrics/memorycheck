@@ -147,6 +147,48 @@ Two honest caveats:
 - **Expiry reports NOT TESTED, by design.** Mem0's expiry is wall-clock; memorycheck's time is logical. Rather than fake a pass with `sleep`, the adapter declares the capability absent and the report says so.
 - **Mem0 deletes asynchronously.** A write issued immediately after a `delete_all` can be swallowed by the in-flight delete — we measured 6/14 writes lost that way, versus 0/10 with no preceding delete. Early runs of this adapter blamed Mem0 for "losing" current facts that the harness had itself just deleted. `reset()` now skips the delete when the namespace is already empty and waits for it to drain when it isn't. Worth knowing if you write your own adapter: a false FAIL against a provider costs a gate its credibility as surely as a false PASS.
 
+## Zep
+
+```bash
+pip install -e ".[zep]"
+export ZEP_API_KEY=...
+memorycheck run scenarios --adapter zep
+```
+
+> **Status: unverified against the live service.** The adapter is written
+> against the real `zep-cloud` 3.25.0 SDK surface and is exercised offline
+> through the full 15-scenario suite with a fake client, but it has never been
+> run against Zep itself — no credential was available. **There are no Zep
+> results to report, and the assumptions below are untested.** Treat it as a
+> starting point, not a measurement.
+
+Zep is a temporal knowledge graph rather than a flat store, which changes the
+mapping:
+
+| memorycheck | Zep |
+|---|---|
+| scope (`tenant_id`/`user_id`) | its own `graph_id`, prefixed with the run namespace — isolation is structural, not a filter |
+| `write` | `graph.add(type="text", data="<key>: <value>")` |
+| `delete` | delete the key's source episodes **and** the edges derived from them |
+| `query` | `graph.search(scope="edges")`, skipping edges Zep marks invalid or expired |
+| `reset` | delete every graph under the namespace prefix |
+| TTL | **not supported** — `supports_ttl = False` |
+
+Two decisions worth arguing with:
+
+- **The adapter honours Zep's own invalidation signal.** `EntityEdge` carries
+  `valid_at` / `invalid_at` / `expired_at` — Zep's published claim about which
+  facts are still live — and edges it marks dead are not templated into the
+  answer. So this tests whether Zep's invalidation is *correct*, not whether a
+  caller who ignores it gets burned. **Mem0 exposes no equivalent signal**, so
+  its adapter cannot filter this way. If Zep scores better here, the honest
+  reading is "Zep gives integrators a liveness signal and it was accurate" —
+  not "Zep beat Mem0 on an identical test". Different providers expose
+  different contracts, and a single leaderboard number would hide that.
+- **Deletes remove derived edges, not just episodes.** Dropping the raw
+  episode while leaving extracted facts standing would let the value keep
+  driving answers — measuring our own laziness rather than Zep's behaviour.
+
 ## CI gate
 
 `memorycheck run` exits non-zero when the gate fails:

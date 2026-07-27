@@ -324,6 +324,96 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-27 — Task 3a: Zep adapter (roadmap item 3, first half)
+
+### 1. What shipped
+
+`adapters/zep.py`, spec `zep`, optional extra `[zep]` (`zep-cloud>=3.25.0`),
+lazy import, credentials from `ZEP_API_KEY`. Registry, `list-adapters` and
+README updated. Tests: 30 pass / 4 skip without credentials (2 Mem0 live,
+2 Zep live).
+
+Written against the real SDK surface, inspected rather than recalled:
+`graph.add/search/create/delete`, `graph.episode.get_by_graph_id/delete`,
+`graph.edge.get_by_graph_id/delete`, `graph.list_all`, and the `Episode` /
+`EntityEdge` / `GraphSearchResults` field sets.
+
+### 2. Findings — **none. Not run against live Zep.**
+
+**No credential was available, so the adapter has never contacted the Zep
+service. There are no Zep metrics and none may be quoted.** The offline layer
+drives the full 15-scenario suite through a fake client, which proves the
+adapter satisfies the runner's contract (including rescope replay and
+`advance_time`) and nothing whatsoever about the live platform.
+
+The Mem0 work is the reason to take this seriously: its async-delete race was
+invisible to every offline test and only appeared on contact with the real
+service. Assumptions here that are unconfirmed and could each be wrong:
+
+1. `graph.search(scope="edges")` returns edge facts containing the stored
+   value verbatim. If Zep's extraction paraphrases the value away, the
+   deterministic judge will not match and every check will read as
+   `missing_current_fact` — a harness artifact, not a Zep defect.
+2. Deleting an episode plus the edges listing it in `.episodes` removes the
+   fact from retrieval. Zep may re-derive edges, or hold facts we did not
+   enumerate.
+3. `graph.create` on an existing id raises rather than clobbers (we swallow
+   the error and continue).
+4. `graph.list_all(page_size=100)` returns enough rows to find every graph in
+   a namespace — no pagination is done, so a busy project could hide graphs
+   from `reset()`.
+5. Writes are visible to search promptly. Mem0 needed an explicit settle after
+   deletes; Zep's ingestion is asynchronous by design (episodes are queued for
+   extraction) and may need substantially longer.
+
+Assumption 5 is the likeliest to bite: Zep extraction is a background job, so
+a write-then-immediately-query scenario may legitimately return nothing.
+
+### 3. Decisions
+
+- **Scope maps to a graph, not a user.** Isolation becomes structural rather
+  than a filter the adapter must remember to pass, and `reset()` is a graph
+  delete — which also sidesteps the delete/write race class that bit the Mem0
+  adapter, since the graph is recreated under a fresh id.
+- **Reads use `scope="edges"`, the knowledge layer an agent would consume.**
+  Episodes (raw ingest log) are used only to resolve deletes. Reading episodes
+  would have guaranteed a stale_reuse FAIL by construction, since a raw log
+  never invalidates — an unfair test.
+- **The adapter honours Zep's `invalid_at` / `expired_at`.** See FOR STRATEGY.
+- **Deletes remove derived edges, not just episodes.** Otherwise we would be
+  measuring our own laziness rather than Zep's deletion behaviour.
+- **`supports_ttl = False`**, as for Mem0: wall-clock validity cannot express
+  logical time, so expiry stays NOT_TESTED.
+
+### 4. FOR STRATEGY
+
+- **Cross-provider comparability is now a live problem.** The Zep adapter
+  filters on Zep's published liveness metadata; the Mem0 adapter cannot,
+  because Mem0 exposes no equivalent. If Zep scores better on `stale_reuse`,
+  the honest statement is "Zep gives integrators a liveness signal and it was
+  accurate", not "Zep beat Mem0". **Recommend against any leaderboard or
+  single comparative number** until there is a decision on whether adapters
+  may use provider-specific quality signals. This affects how results can be
+  published, so per the external-actions rule it needs a ruling before any
+  comparative claim goes out.
+- **A Zep credential is needed** to turn this from code into a measurement.
+  Until then the README carries an explicit "unverified" banner and the
+  roadmap entry says the same. Nothing about Zep should be repeated
+  externally in the meantime.
+- **Where should unverified adapters live?** Shipping code on `main` that has
+  never touched its provider is a supportability risk — a user with a key will
+  run it before we do. Options: keep as-is with the banner, gate behind a
+  `--experimental` flag, or hold on a branch until verified.
+
+### 5. Next
+
+Confirm the five assumptions above against live Zep as soon as a key exists,
+then LangGraph store adapter (second half of roadmap item 3). Do not start
+LangGraph before Zep is verified — landing a second unverified adapter would
+compound the risk rather than clear it.
+
+---
+
 ### Superseded "Next" from Task 2
 
 Roadmap item 3 — Zep adapter, then LangGraph store adapter. Same shape as

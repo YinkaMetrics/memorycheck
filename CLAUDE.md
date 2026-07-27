@@ -24,7 +24,8 @@ after every change.
 - `report.py` — metrics, scorecard, JSON/MD evidence, gate verdict/exit code.
 - `adapters/` — `base.py` (contract + `AdapterError`), `reference.py`
   (strict/naive/leaky demo), `http.py` (customer shim), `mem0.py` (hosted
-  Mem0), `NullAdapter` (no-memory baseline).
+  Mem0), `zep.py` (hosted Zep, unverified live), `NullAdapter` (no-memory
+  baseline).
 - `cli.py` — `validate` / `run` / `list-adapters`.
 
 ## Non-negotiable invariants
@@ -124,7 +125,9 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
    double correction, re-add-then-correct, multi-key interference, TTL with a
    non-expiring sibling, rescope-then-re-add, and cross-tenant suites
    (shared `user_id` across tenants, cross-tenant rescope).
-3. Zep adapter, then LangGraph store adapter.
+3. Zep adapter (code landed, **never run against live Zep** — no credential;
+   assumptions listed in `HANDOFF.md` need confirming before any Zep result
+   is quoted), then LangGraph store adapter.
 4. LLM judge — only after the calibration protocol has been run.
 
 Pack size is frozen at 15 (ruling 2026-07-27). If a pilot needs per-commit
