@@ -29,9 +29,9 @@ PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 #: that an integrator should know before running the pack, without a verdict.
 WARN, INFO = "WARN", "INFO"
 
-#: How the answering layer renders stored values. Stamped into every report,
-#: because a `missing_current_fact` rate is unreadable without it.
-QUOTING, PARAPHRASING, UNKNOWN = "quoting", "paraphrasing", "unknown"
+#: Answering-layer classification lives in the oracle (the grading core) and
+#: is re-exported here so doctor and reports agree on the vocabulary.
+from .oracle import PARAPHRASING, QUOTING, UNKNOWN, detect_answering_layer  # noqa: E402,F401
 
 # Probe values are distinctive so a match cannot be coincidence, and carry the
 # marker below so a customer can find and purge anything left behind.
@@ -91,32 +91,6 @@ def _retrieved_has(adapter: MemoryAdapter, scope: Scope, value: str, prompt: str
         if value in str(row):
             return True
     return False
-
-
-def detect_answering_layer(runs) -> str:
-    """Classify an actual run's answering layer from its own observations.
-
-    Same signal doctor uses, taken from the run rather than a probe, so the
-    stamp on a report describes that report's evidence. Paraphrasing is
-    asserted only on positive evidence: a value retrieval clearly found, that
-    the answer did not quote.
-    """
-    quoting = paraphrasing = False
-    for run in runs:
-        for obs in run.observations:
-            current = {c.value for c in obs.candidates if c.label == "current"}
-            if not current:
-                continue
-            answer = obs.answer or ""
-            blob = " ".join(str(r) for r in (obs.retrieved or []))
-            for value in current:
-                if value in answer:
-                    quoting = True
-                elif value in blob:
-                    paraphrasing = True
-    if paraphrasing:
-        return PARAPHRASING
-    return QUOTING if quoting else UNKNOWN
 
 
 def _visible(adapter: MemoryAdapter, scope: Scope, value: str, prompt: str) -> bool:
@@ -219,16 +193,18 @@ def run_doctor(adapter: MemoryAdapter, timeout: float = 30.0) -> DoctorReport:
             "answering_layer", "answers quote stored values", WARN,
             "retrieval returned the value but the answer did not contain it — "
             "your answering layer paraphrases",
-            "This is not a defect in your stack. The default judge matches "
-            "exact values, so it cannot see a paraphrased fact, and "
-            "missing_current_fact will report FALSE FAILURES against this "
-            "configuration. The P1 checks (scope_leakage, deletion_residue) "
-            "stay sound — paraphrasing cannot invent a leak — but note they "
-            "also become less sensitive, since a paraphrased leak may be "
-            "missed. Recommended: run with --fail-on p1 for this "
-            "configuration; and to exercise the full lifecycle now, point "
-            "/query at your store rather than your agent, then re-run with the "
-            "agent once the semantic judge is calibrated.",
+            "This is not a defect in your stack — but it is not the supported "
+            "configuration for an evidence pack. RECOMMENDED: point /query at "
+            "your store (or any layer that quotes stored values verbatim) and "
+            "re-run. That is the configuration the full lifecycle is designed "
+            "for, and it exercises every check. Wiring your full agent into "
+            "/query is supported only once the semantic judge is calibrated. "
+            "If you must run as-is, use --fail-on p1 and read the LIMITATIONS "
+            "block on the report: missing_current_fact is reported NOT TESTED "
+            "rather than FAIL, memory_utility_delta is unavailable so the run "
+            "cannot detect a system that passes by forgetting everything, and "
+            "while P1 findings stay trustworthy, a clean P1 result is weaker "
+            "evidence because a paraphrased leak would also go undetected.",
         ))
     else:
         report.answering_layer = UNKNOWN

@@ -324,6 +324,83 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-28 — Task 7: Option B implemented, limitations block, roadmap change
+
+### 1. What shipped
+
+**Ruling 1 — Option B.** When `answering_layer == paraphrasing`,
+`missing_current_fact` reports **NOT_TESTED** with the detail "answering layer
+paraphrases; the deterministic judge cannot verify this". Same shape as the TTL
+case, so no new status was added and invariant 3 is satisfied rather than
+worked around.
+
+Two implementation notes worth recording:
+
+- **The classifier moved into `oracle.py`**, with `doctor.py` re-exporting it.
+  Grading now depends on the core rather than on a diagnostic tool; the reverse
+  would have inverted the dependency.
+- **The layer is classified once and applied to both the run and its
+  baseline.** Grading a baseline on different terms from the run it is compared
+  against would corrupt the very comparison the delta exists to make.
+
+**Ruling 2 — LIMITATIONS block**, in JSON (`limitations: [...]`) and Markdown,
+placed **above the metrics table** — a test asserts that position, so it cannot
+drift into a footnote. Also printed in the terminal scorecard. States all three
+required facts: utility delta unavailable so the run cannot detect a system
+passing by forgetting everything; P1 findings trustworthy but a clean P1 is
+weaker evidence since a paraphrased leak would also go undetected; store or
+quoting layer is the supported configuration for a full pack.
+
+**Ruling 3 — doctor's WARN** now leads with the store-first path as
+RECOMMENDED, and states that full-agent wiring is supported only once the
+semantic judge is calibrated. `--fail-on p1` is presented as the fallback for
+running as-is, not the fix.
+
+**Ruling 4 — shim guide decision 2** restructured: store-first is the
+documented default with sample code, and the full-agent route is marked as
+requiring the semantic judge, listing exactly what a paraphrasing run loses.
+
+Doctor is 11 checks, 16 tests. Suite: 64 passed, 4 skipped.
+
+### 2. Roadmap change (ruling 5)
+
+**Judge calibration moves ahead of further adapters.** It is the constraint on
+what the product can claim, not a later refinement: a customer running their
+real agent gets `missing_current_fact` NOT_TESTED, no utility delta, and weaker
+P1 absence. More adapters do not widen that evidence pack — the judge does.
+
+**The 200 labelled examples do not require customer data.** Paraphrased
+variants of the existing pack's answers, hand-labelled, are a valid calibration
+set and can be built independently — no pilot, no NDA, no waiting. Not started
+tonight; protocol to be sketched first.
+
+Early sketch, to be refined rather than treated as settled: for each pack value
+generate answers that (a) quote it, (b) paraphrase it while relying on it,
+(c) mention the key without the value, (d) rely on a *different* value. Label
+each for whether the answer relies on the target value. Classes (b) and (d) are
+where precision will be won or lost — (b) is the recall gap the judge exists to
+close, and (d) is where a semantic judge is most likely to hallucinate reliance
+and manufacture a false P1. The ≥90% precision bar should be measured
+**per release-blocking class**, not pooled, or a good score on easy classes
+will mask a bad one on P1.
+
+### 3. FOR STRATEGY
+
+- **A paraphrasing run now passes the gate cleanly** — `missing_current_fact`
+  is NOT_TESTED, and if the store is otherwise sound, the verdict is PASS with
+  a LIMITATIONS block. That is correct per Option B, and it is also the first
+  configuration where **PASS means materially less than it usually does**. The
+  block says so, but a customer who screenshots the verdict line loses that
+  context. Worth deciding whether the gate verdict itself should be qualified
+  (e.g. `PASS (limited)`) rather than relying on the reader.
+
+### 4. Next
+
+Saturday: Mem0 three-arm experiment at quota reset, then the pending regen.
+Then judge calibration. Zep remains halted.
+
+---
+
 ## 2026-07-28 — Task 6: paraphrase detection, correction INFO, gating proposal
 
 ### 1. What shipped (rulings 1 and 3)

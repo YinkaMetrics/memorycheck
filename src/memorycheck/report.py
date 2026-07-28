@@ -21,7 +21,22 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from . import __version__
-from .oracle import CHECKS, FAIL, NOT_TESTED, PASS, SEVERITY, Finding, current_fact_accuracy
+from .oracle import (
+    CHECKS, FAIL, NOT_TESTED, PARAPHRASING, PASS, SEVERITY, Finding,
+    current_fact_accuracy,
+)
+
+#: Stated in full whenever the answering layer paraphrases. Prominent by
+#: design: these three facts change how the whole report must be read, and a
+#: reader who misses them will over-read a clean result.
+PARAPHRASE_LIMITATIONS = [
+    "memory_utility_delta is unavailable, so this run CANNOT detect a system "
+    "passing by forgetting everything.",
+    "P1 findings remain trustworthy, but a clean P1 result is weaker evidence: "
+    "a paraphrased leaked value would not be detected either.",
+    "For a full evidence pack, point /query at the store or a quoting "
+    "answering layer. That is the supported configuration.",
+]
 
 RATE_CHECKS = ("scope_leakage", "deletion_residue", "stale_reuse", "expiry_leak")
 
@@ -87,6 +102,12 @@ def build_summary(
         # answering layer produces false failures on that check, while the P1
         # checks stay sound.
         "answering_layer": answering_layer,
+        # Travels with the evidence, like adapter_unverified: a paraphrasing
+        # run is not a lesser version of a normal run, it answers fewer
+        # questions, and the reader has to know which.
+        "limitations": (
+            list(PARAPHRASE_LIMITATIONS) if answering_layer == PARAPHRASING else []
+        ),
         "judge": judge_name,
         "seeds": seeds,
         "scenarios": scenario_count,
@@ -139,6 +160,22 @@ def to_markdown(summary: dict) -> str:
             lines.append(f">")
             lines.append(f"> {summary['adapter_unverified_note']}")
         lines.append("")
+    if summary.get("limitations"):
+        lines += [
+            "> ### ⚠️ LIMITATIONS OF THIS RUN",
+            ">",
+            "> The answering layer **paraphrases** stored values, so this "
+            "evidence pack is narrower than a normal one:",
+            ">",
+        ]
+        lines += [f"> {i}. {text}" for i, text in enumerate(summary["limitations"], 1)]
+        lines += [
+            ">",
+            "> `missing_current_fact` is reported NOT TESTED throughout rather "
+            "than FAIL, because the deterministic judge matches exact values "
+            "and cannot verify a paraphrase either way.",
+            "",
+        ]
     lines += [
         f"- **Adapter:** `{summary['adapter']}`   **Judge:** `{summary['judge']}`",
         f"- **Answering layer:** `{summary.get('answering_layer', 'unknown')}`"
@@ -215,6 +252,10 @@ def print_summary(summary: dict) -> None:
     for name, value in rows:
         print(f"  {name.ljust(width)}{value}")
     print(f"  {'answering_layer'.ljust(width)}{summary.get('answering_layer', 'unknown')}")
+    if summary.get("limitations"):
+        print("\n  !! LIMITATIONS OF THIS RUN — the answering layer paraphrases:")
+        for i, text in enumerate(summary["limitations"], 1):
+            print(f"     {i}. {text}")
     print(f"\n  GATE [fail on <= {summary['gate']['fail_on']}]: {summary['gate']['verdict']} "
           f"({summary['gate']['blocking_findings']} blocking findings)")
     if summary.get("adapter_unverified"):

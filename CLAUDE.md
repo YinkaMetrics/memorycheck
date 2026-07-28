@@ -147,11 +147,24 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
    `langgraph[:memory|:sqlite[:path]]`, extra `[langgraph]`). Preflight run
    first; clean PASS on both backends, seed-stable. `supports_ttl = False`
    from observation. First adapter to clear `unverified`.
-4. Zep — code landed but **not measurable by the current instrument**;
+4. **LLM judge calibration — moved ahead of further adapters**
+   (ruling 2026-07-28). It is now the constraint on what the product can
+   claim, not a later refinement: with a paraphrasing answering layer,
+   `missing_current_fact` is NOT_TESTED, the utility delta is unavailable,
+   and a clean P1 is weaker evidence — so a customer running their real
+   agent gets a materially narrower evidence pack. More adapters do not
+   widen that; the judge does.
+
+   **The 200 labelled examples do not require customer data.** Paraphrased
+   variants of the existing pack's answers, labelled by hand, are a valid
+   calibration set and can be built independently. Sketch the protocol
+   before starting.
+5. Zep — code landed but **not measurable by the current instrument**;
    mechanism is selective silent extraction, no unblock date. Do not resume
    without a founder decision. Not a judge-calibration problem: a judge
    classifies answers, and nothing is materialised to classify.
-5. LLM judge — only after the calibration protocol has been run.
+6. Further adapters, after the judge.
+
 
 Every new adapter runs the preflight first and keeps `unverified = True`
 until every item on it has an observed answer.

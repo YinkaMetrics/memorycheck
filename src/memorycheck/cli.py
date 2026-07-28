@@ -62,8 +62,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     suite = run_suite(
         scenarios, adapter, judge, seeds=args.seeds, baseline=not args.no_baseline
     )
-    findings = evaluate(suite["runs"])
-    baseline_findings = evaluate(suite["baseline_runs"])
+    # Classify once and apply to both, so the baseline is graded on the same
+    # terms as the run it is compared against.
+    answering_layer = detect_answering_layer(suite["runs"])
+    findings = evaluate(suite["runs"], answering_layer)
+    baseline_findings = evaluate(suite["baseline_runs"], answering_layer)
 
     summary = build_summary(
         findings=findings,
@@ -75,7 +78,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         fail_on=args.fail_on,
         unverified=getattr(adapter, "unverified", False),
         unverified_note=getattr(adapter, "unverified_note", ""),
-        answering_layer=detect_answering_layer(suite["runs"]),
+        answering_layer=answering_layer,
     )
     print_summary(summary)
     write_reports(summary, args.report_json, args.report_md)

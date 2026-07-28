@@ -299,3 +299,65 @@ def test_unreachable_shim_fails_at_the_first_check(tmp_path):
     assert _status(report, "reset") == FAIL
     # and it stops there rather than reporting a cascade of meaningless failures
     assert len(report.checks) == 1
+
+
+# ------------------------------------- Option B: paraphrase degrades to NOT_TESTED
+
+
+def test_paraphrasing_degrades_missing_current_fact_to_not_tested(serve):
+    """Ruling 2026-07-28, Option B. A paraphrasing layer cannot be verified by
+    the exact-match judge either way, so blaming it with a FAIL would report
+    the judge's known recall limit as a defect in the customer's stack."""
+    from memorycheck.judge import load_judge
+    from memorycheck.oracle import (
+        NOT_TESTED, PARAPHRASE_NOT_TESTED, detect_answering_layer, evaluate,
+    )
+    from memorycheck.report import PARAPHRASE_LIMITATIONS, build_summary, to_markdown
+    from memorycheck.runner import run_suite
+    from memorycheck.scenario import load_dir
+    from pathlib import Path
+
+    scenarios = load_dir(Path(__file__).resolve().parents[1] / "scenarios")
+    adapter = serve(_Paraphrasing())
+    suite = run_suite(scenarios[:1], adapter, load_judge("deterministic"),
+                      seeds=1, baseline=False)
+    layer = detect_answering_layer(suite["runs"])
+    assert layer == PARAPHRASING
+
+    findings = evaluate(suite["runs"], layer)
+    mcf = [f for f in findings if f.check == "missing_current_fact"]
+    assert mcf, "the scenario has must_use checks"
+    assert all(f.status == NOT_TESTED for f in mcf), "must not FAIL a paraphraser"
+    assert all(f.detail == PARAPHRASE_NOT_TESTED for f in mcf)
+
+    summary = build_summary(findings, [], adapter_name="http:x",
+                            judge_name="deterministic-v0", seeds=1,
+                            scenario_count=1, fail_on="p2", answering_layer=layer)
+    assert summary["answering_layer"] == PARAPHRASING
+    assert summary["limitations"] == PARAPHRASE_LIMITATIONS
+    assert summary["gate"]["verdict"] == "PASS", "no false blocking findings"
+
+    md = to_markdown(summary)
+    assert "LIMITATIONS OF THIS RUN" in md
+    assert "forgetting everything" in md
+    assert "weaker evidence" in md
+    # prominent: above the metrics table, not a footnote
+    assert md.index("LIMITATIONS OF THIS RUN") < md.index("| Check |")
+
+
+def test_quoting_runs_carry_no_limitations_block(serve):
+    from memorycheck.report import build_summary, to_markdown
+
+    summary = build_summary([], [], adapter_name="x", judge_name="j", seeds=1,
+                            scenario_count=1, fail_on="p2",
+                            answering_layer=QUOTING)
+    assert summary["limitations"] == []
+    assert "LIMITATIONS" not in to_markdown(summary)
+
+
+def test_doctor_warn_recommends_the_store_first_path(serve):
+    report = run_doctor(serve(_Paraphrasing()), timeout=3)
+    fix = next(c.fix for c in report.checks if c.id == "answering_layer")
+    assert "RECOMMENDED" in fix
+    assert "point /query at" in fix
+    assert "only once the semantic judge is calibrated" in fix

@@ -52,30 +52,44 @@ common integration bug we see, `doctor` reports it as scope leakage, and it is
 a P1. If you have one tenant, pass a constant; if your memory is per agent or
 per session, map that onto `user_id`.
 
-**Decision 2 — measure your store, or your agent.** The templates retrieve and
-template a sentence, which exercises your store. To measure what you actually
-ship, call your agent in `/query` instead:
+**Decision 2 — what sits behind `/query`.**
+
+**Point it at your store.** This is the supported configuration and what the
+templates do: retrieve the facts for the scope and render them so stored values
+appear verbatim in the answer. Every check works, and the evidence pack is
+complete. Start here — and for most pilots, stay here.
+
+```python
+facts = your_retrieval(tenant, user, prompt)          # scoped to BOTH ids
+return {"answer": render(facts), "retrieved": facts}  # values verbatim
+```
+
+**Wiring your full agent instead requires the semantic judge**, which is not
+yet calibrated. The default judge matches **exact values**, so an agent that
+paraphrases — `"the annual plan"` rather than `"scale-annual-2026"` — reads as
+a miss. That is a limit of the judge, not a bug in your stack, but it changes
+what a run can tell you:
 
 ```python
 context = your_retrieval(tenant, user, prompt)
 answer  = your_agent.respond(prompt, context=context)
-return {"answer": answer}
+return {"answer": answer, "retrieved": context}   # include retrieved!
 ```
 
-Both are valid; they answer different questions. The default judge matches
-**exact values**, so an agent that paraphrases (`"the annual plan"` instead of
-`"scale-annual-2026"`) reads as a miss. That is a known limit of the
-deterministic judge, not a bug in your stack.
+`doctor` detects paraphrasing and says so, provided you return the raw hits in
+`"retrieved"` — that is what lets it tell paraphrasing apart from a write that
+never landed. When detected:
 
-`doctor` detects this for you and says so. If your agent paraphrases, include
-the raw hits in the optional `"retrieved"` field — that is what lets doctor
-tell paraphrasing apart from a write that never landed. It will then report
-`answering layer: paraphrasing`, warn that `missing_current_fact` will produce
-false failures, and recommend `--fail-on p1`. Every report is stamped with the
-answering layer, so a rate can never be read out of context.
+- `missing_current_fact` reports **NOT TESTED** rather than FAIL, because the
+  judge cannot verify a paraphrase either way;
+- **`memory_utility_delta` is unavailable**, so the run cannot detect a system
+  that passes by forgetting everything;
+- **P1 findings stay trustworthy, but a clean P1 result is weaker evidence** —
+  a paraphrased leaked value would also go undetected;
+- use `--fail-on p1`, and read the LIMITATIONS block printed on the report.
 
-Suggested order: point `/query` at your store first and get the lifecycle
-clean, then re-run with the full agent.
+Every report is stamped with the answering layer, so a rate can never be read
+out of context.
 
 **Decision 3 — TTL.** memorycheck's clock is logical: it asks you to age facts
 by N *steps*, not to wait N seconds. Most stacks cannot, so set

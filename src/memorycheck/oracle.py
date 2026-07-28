@@ -45,6 +45,43 @@ _LABEL_TO_CHECK = {
 
 PASS, FAIL, NOT_TESTED = "PASS", "FAIL", "NOT_TESTED"
 
+#: How the system under test renders stored values in its answers.
+QUOTING, PARAPHRASING, UNKNOWN = "quoting", "paraphrasing", "unknown"
+
+
+def detect_answering_layer(runs) -> str:
+    """Classify a run's answering layer from its own observations.
+
+    Paraphrasing is asserted only on positive evidence: a current value that
+    retrieval clearly found and the answer did not quote. `retrieved` is read
+    here to explain an absence, never to grade — invariant 2 forbids grading
+    from it, and no finding is derived from it.
+    """
+    quoting = paraphrasing = False
+    for run in runs:
+        for obs in run.observations:
+            current = {c.value for c in obs.candidates if c.label == "current"}
+            if not current:
+                continue
+            answer = obs.answer or ""
+            blob = " ".join(str(r) for r in (obs.retrieved or []))
+            for value in current:
+                if value in answer:
+                    quoting = True
+                elif value in blob:
+                    paraphrasing = True
+    if paraphrasing:
+        return PARAPHRASING
+    return QUOTING if quoting else UNKNOWN
+
+
+#: Detail recorded when the judge cannot verify a must_use check because the
+#: answering layer paraphrases. Same shape as the TTL case: the
+#: adapter/judge combination cannot test it, so NOT_TESTED over a false FAIL.
+PARAPHRASE_NOT_TESTED = (
+    "answering layer paraphrases; the deterministic judge cannot verify this"
+)
+
 
 @dataclass
 class Finding:
@@ -57,7 +94,11 @@ class Finding:
     seed: int = 0
 
 
-def _evaluate_query(obs: QueryObservation, ttl_not_supported: bool) -> list[Finding]:
+def _evaluate_query(
+    obs: QueryObservation,
+    ttl_not_supported: bool,
+    paraphrasing: bool = False,
+) -> list[Finding]:
     findings: list[Finding] = []
     used_values = {u.value for u in obs.used}
     labels_present = {c.label for c in obs.candidates}
@@ -129,6 +170,18 @@ def _evaluate_query(obs: QueryObservation, ttl_not_supported: bool) -> list[Find
                 )
             )
             continue
+        if paraphrasing:
+            # Option B (ruling 2026-07-28): the judge matches exact values, so
+            # a paraphrased answer cannot be verified either way. Reporting
+            # FAIL would blame the system for the judge's known recall limit.
+            findings.append(
+                Finding(
+                    obs.scenario_id, obs.step_index, "missing_current_fact",
+                    SEVERITY["missing_current_fact"], NOT_TESTED,
+                    PARAPHRASE_NOT_TESTED, obs.seed,
+                )
+            )
+            continue
         if any(v in used_values for v in current_values):
             findings.append(
                 Finding(
@@ -149,11 +202,19 @@ def _evaluate_query(obs: QueryObservation, ttl_not_supported: bool) -> list[Find
     return findings
 
 
-def evaluate(runs: list[ScenarioRun]) -> list[Finding]:
+def evaluate(runs: list[ScenarioRun], answering_layer: str | None = None) -> list[Finding]:
+    """Grade a suite. `answering_layer` defaults to classifying the runs
+    themselves; pass it explicitly to keep a baseline consistent with its
+    main run."""
+    if answering_layer is None:
+        answering_layer = detect_answering_layer(runs)
+    paraphrasing = answering_layer == PARAPHRASING
     findings: list[Finding] = []
     for run in runs:
         for obs in run.observations:
-            findings.extend(_evaluate_query(obs, run.ttl_not_supported))
+            findings.extend(
+                _evaluate_query(obs, run.ttl_not_supported, paraphrasing)
+            )
     return findings
 
 
