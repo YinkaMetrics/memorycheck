@@ -137,9 +137,10 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
    double correction, re-add-then-correct, multi-key interference, TTL with a
    non-expiring sibling, rescope-then-re-add, and cross-tenant suites
    (shared `user_id` across tenants, cross-tenant rescope).
-3. **LangGraph store adapter.** Moved ahead of Zep (ruling 2026-07-28).
-   **Run `ADAPTER_PREFLIGHT.md` before any scenario executes** — every item
-   on it exists because skipping it already produced a false result.
+3. ~~**LangGraph store adapter**~~ — done (`adapters/langgraph.py`, spec
+   `langgraph[:memory|:sqlite[:path]]`, extra `[langgraph]`). Preflight run
+   first; clean PASS on both backends, seed-stable. `supports_ttl = False`
+   from observation. First adapter to clear `unverified`.
 4. Zep — code landed but **not measurable by the current instrument**;
    mechanism is selective silent extraction, no unblock date. Do not resume
    without a founder decision. Not a judge-calibration problem: a judge

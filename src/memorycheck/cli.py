@@ -90,8 +90,8 @@ def _cmd_list_adapters(_: argparse.Namespace) -> int:
     print("  http:CONFIG.yaml   your stack behind a 4-endpoint shim (see adapters/http.py)")
     print("  mem0               hosted Mem0 platform (needs MEM0_API_KEY; pip install '.[mem0]')")
     print("  zep                hosted Zep platform (needs ZEP_API_KEY; pip install '.[zep]')")
+    print("  langgraph[:KIND]   local LangGraph store: memory (default) or sqlite[:path]")
     print("  null               no-memory baseline (used internally for utility delta)")
-    print("\n  roadmap: langgraph")
     return 0
 
 

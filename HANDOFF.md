@@ -324,6 +324,113 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-28 — Task 4: LangGraph store adapter (roadmap item 3) — PASSES
+
+### 1. What shipped
+
+`adapters/langgraph.py`, spec `langgraph` / `langgraph:memory` /
+`langgraph:sqlite[:path]`, extra `[langgraph]`, lazy import. Registry, CLI and
+README updated. Evidence in `examples/report_langgraph.{md,json}`. 51 tests
+pass, 4 skip (the live Mem0/Zep tests).
+
+**First adapter to clear `unverified`** — every preflight item has an observed
+answer and the full suite ran against the real stores.
+
+### 2. Preflight (run first, as required)
+
+| Item | InMemoryStore | SqliteStore |
+|---|---|---|
+| 1 quota / rate | none — local | none — local |
+| 2 write confirmation | `get()` sees it immediately | same |
+| 3 latency | ~0.3ms put, synchronous | ~0.7ms put, synchronous |
+| 4 silent discard | none; 7/7 pack values round-trip | none; 7/7 |
+| 5 reset / pagination | **`list_namespaces` default 100 returned 100 of 121** | same |
+
+Three findings shaped the adapter:
+
+- **Pagination hides namespaces by default**, exactly as on Zep. `reset()`
+  pages via `offset` rather than trusting one call.
+- **`search` defaults to `limit=10`**, which would silently truncate a scope
+  and read as the store forgetting facts. Ceiling raised deliberately.
+- **`SqliteStore` persists**, so reopening the file showed all 121 namespaces.
+  `reset()` is therefore scoped to a run-specific namespace root — a global
+  clear would delete rows belonging to whoever owns the file.
+
+**TTL set from observation, not documentation.** `InMemoryStore.supports_ttl`
+is `False` and `put(ttl=…)` raises `NotImplementedError`. `SqliteStore`
+reports `supports_ttl=True`, but a `ttl` passed without a `ttl_config` was
+**not enforced** — the value was still present after the TTL elapsed — and it
+is wall-clock regardless, while memorycheck time is logical. `supports_ttl =
+False` for both; expiry reports NOT_TESTED.
+
+### 3. Findings — clean pass, stated plainly
+
+15 scenarios × 2 seeds, seed-stable, on **both** backends:
+
+```
+current_fact_accuracy  100% (46/46)
+stale_reuse            0%  (0/10)
+scope_leakage          0%  (0/22)
+deletion_residue       0%  (0/18)
+expiry_leak            NOT TESTED
+memory_utility_delta   +1.00
+
+GATE [fail on <= P2]: PASS (0 blocking findings)
+```
+
+**No failure was hunted for and none is implied.** A keyed store supersedes by
+construction: a correction overwrites the key, so no superseded copy survives
+to be retrieved; deletion removes the row; namespaces are structural, so scopes
+cannot bleed. This is what a key-value store does, and it makes the adapter a
+useful **control** — roughly the floor of what a correct store looks like under
+these scenarios, and a reference point for reading the hosted providers.
+
+Guards against a vacuous pass, all satisfied:
+
+- current-fact accuracy 100%, so it is not passing by storing nothing;
+- memory utility delta +1.00 against the no-memory baseline, so memory is
+  demonstrably driving answers;
+- the same pack still fails `reference:naive` with 32 blocking findings, so the
+  scenarios retain their teeth;
+- the full 15-scenario suite also runs through the runner in the offline tests,
+  exercising rescope replay and `advance_time`.
+
+### 4. Decisions
+
+- **Namespace is `(run_root, tenant_id, user_id)`.** The scope mapping is the
+  `(tenant_id, user_id)` pair as specified; the run root is prepended because
+  `SqliteStore` persists and an unscoped `reset()` would delete a user's own
+  data. Noted as a deliberate extension rather than a silent change.
+- **Answering layer copied from `ReferenceAdapter`**, including its key-token
+  relevance filter, so what differs between adapters is the store rather than
+  the phrasing.
+- **Offline tests use a fake implementing the measured semantics** — keyed
+  overwrite and paginated namespace listing. A fake that returned everything in
+  one page would have validated a fiction, which is the mistake the Zep fake
+  made before it was corrected.
+- **Tests import no `langgraph`**, so they run rather than skip in CI without
+  the extra. Verified in a clean venv with neither this nor any other extra.
+
+### 5. FOR STRATEGY
+
+- **A control adapter changes how the hosted results read.** With a local store
+  passing cleanly, "Mem0 fails stale reuse 10/10" now sits against a
+  demonstrated floor rather than in isolation. That strengthens the finding and
+  also raises the bar: any future claim should say which adapter is the
+  reference point.
+- **`SqliteStore` advertising an unenforced TTL is a candidate finding**, not
+  pursued. `supports_ttl=True` with a `ttl` argument accepted and ignored is
+  the kind of green-status-no-effect behaviour this project exists to catch.
+  Untested beyond one observation; would need a `ttl_config` variant before it
+  is a claim.
+
+### 6. Next
+
+Arm the Mem0 three-arm delete/re-add experiment as a single push-button script
+for Saturday's quota reset. Zep remains halted with no unblock date.
+
+---
+
 ## 2026-07-27 — Zep staged verification: STAGE 1 IN PROGRESS, NOT PASSED
 
 Staged per ruling. **Stage 1 is not passed, so stages 2–4 have not been

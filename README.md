@@ -216,6 +216,38 @@ Two honest caveats:
 - **Expiry reports NOT TESTED, by design.** Mem0's expiry is wall-clock; memorycheck's time is logical. Rather than fake a pass with `sleep`, the adapter declares the capability absent and the report says so.
 - **Mem0 applies writes and deletes asynchronously.** A write issued immediately after a `delete_all` can be swallowed by the in-flight delete — we measured 6/14 writes lost that way, versus 0/10 with no preceding delete. Early runs of this adapter blamed Mem0 for "losing" current facts the harness had itself just deleted. Every mutation now confirms its own effect by polling before returning, and a mutation that never lands aborts the run with its measured latency rather than being scored against the provider. Worth knowing if you write your own adapter: a false FAIL costs a gate its credibility as surely as a false PASS, and **the adapter confirms only its own writes — it never polls a query until an expected value appears**, which would launder a real miss into a pass.
 
+## LangGraph store
+
+```bash
+pip install -e ".[langgraph]"
+memorycheck run scenarios --adapter langgraph            # InMemoryStore
+memorycheck run scenarios --adapter langgraph:sqlite     # SqliteStore, temp file
+memorycheck run scenarios --adapter langgraph:sqlite:/path/store.db
+```
+
+Local, synchronous, no credentials or quota. Scope maps to a namespace tuple, a fact is one store key holding `{"key", "value"}`, and the answering layer is templated exactly as the reference adapter's.
+
+### Result (15 scenarios × 2 seeds, `langgraph` 1.2.9, both backends)
+
+```
+  current_fact_accuracy  100% (46/46)
+  stale_reuse            0%  (0/10)
+  scope_leakage          0%  (0/22)
+  deletion_residue       0%  (0/18)
+  expiry_leak            NOT TESTED
+  memory_utility_delta   +1.00
+
+  GATE [fail on <= P2]: PASS (0 blocking findings)
+```
+
+**Clean pass on `InMemoryStore` and `SqliteStore` alike, stable across seeds.** No stale reuse in 10 correction opportunities, no scope leakage in 22, no deletion residue in 18.
+
+That is the expected result rather than a surprising one, and the reason is worth stating: **a keyed store supersedes by construction.** Writing a corrected value to the same key overwrites the old one, so there is no superseded copy left to retrieve. Deletion removes the row. Namespaces are structural, so scopes cannot bleed. Nothing here is clever — it is what a key-value store does, and it makes this adapter a useful control: it marks roughly the floor of what a correct store looks like under these scenarios.
+
+Two checks keep that from being a vacuous pass. Current-fact accuracy is 100%, so it is not passing by storing nothing; and the memory utility delta is +1.00 against the no-memory baseline, so memory is demonstrably driving the answers. The same pack still fails `reference:naive` with 32 blocking findings, so the scenarios retain their teeth.
+
+Expiry reports NOT TESTED. `InMemoryStore.supports_ttl` is `False` and `put(ttl=…)` raises; `SqliteStore` advertises TTL but did not enforce it without a `ttl_config`, and it is wall-clock either way, while memorycheck time is logical. Evidence in [`examples/report_langgraph.md`](examples/report_langgraph.md).
+
 ## Zep
 
 ```bash

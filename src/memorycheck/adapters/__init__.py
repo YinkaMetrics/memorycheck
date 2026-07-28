@@ -4,9 +4,8 @@
   http:path/to/config.yaml
   mem0
   zep
+  langgraph | langgraph:memory | langgraph:sqlite[:path]
   null
-
-Roadmap adapters (langgraph) register here as they land.
 """
 
 from __future__ import annotations
@@ -33,11 +32,15 @@ def load_adapter(spec: str) -> MemoryAdapter:
         from .zep import ZepAdapter
 
         return ZepAdapter()
+    if name == "langgraph":
+        from .langgraph import LangGraphAdapter
+
+        return LangGraphAdapter(arg)
     if name == "null":
         return NullAdapter()
     raise ValueError(
-        f"unknown adapter {name!r} (available: reference, http, mem0, zep, null; "
-        "langgraph is on the roadmap)"
+        f"unknown adapter {name!r} "
+        "(available: reference, http, mem0, zep, langgraph, null)"
     )
 
 
