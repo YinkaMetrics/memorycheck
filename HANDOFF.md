@@ -525,9 +525,10 @@ implementer's to choose:
 retrieval) **remains untested**, because both attempts used a value that never
 produced an edge to delete.
 
-### RESULT: 2 of 5 pack values never extract. Zep verification stops here.
+### RESULT: some pack values never extract. Zep verification stops here.
 
-Five episodes, one graph, the pack's own values:
+Five episodes, one graph, the pack's own values. Raw observation, no rate
+derived — see the note below on why a rate would be meaningless:
 
 ```
 EDGE     plan: starter-legacy-2024        (baseline)
@@ -535,20 +536,22 @@ NO EDGE  subscription: moonstone-7742     (scenario 006)
 EDGE     seat-count: pinecrest-6604       (scenario 011)
 EDGE     renewal-window: harborlight-5529 (scenario 009)
 NO EDGE  shipping-window: zephyr-6621     (scenario 008)
-
-3/5 produced a retrievable edge after 730s
 ```
 
 Facts produced: `'renewal-window is related to harborlight-5529.'`,
 `'The starter-legacy-2024 is a plan.'`, `'The seat-count is pinecrest-6604.'`
 
-**~40% of the pack's values silently produce nothing.** With the adapter as
-built, those writes fail confirmation and abort the run; with confirmation
-relaxed, they would surface as `missing_current_fact` — a fabricated P2 failure
-against Zep for facts it was never asked to store in a form it extracts. Either
-way roughly two in five scenarios would yield artifacts rather than
-measurements, so **no aggregate Zep number can be trusted and stage 4 must not
-run.**
+Some of the pack's values silently produce nothing. With the adapter as built,
+those writes fail confirmation and abort the run; with confirmation relaxed,
+they would surface as `missing_current_fact` — a fabricated P2 failure against
+Zep for facts it was never asked to store in a form it extracts. Enough of the
+pack is affected that **no aggregate Zep number can be trusted and stage 4 must
+not run.**
+
+**No rate is quoted here, deliberately.** Which values extract depends on the
+tokens we invented, so any proportion measured over our own value set describes
+our token choices, not the provider. Quoting one would manufacture a statistic
+out of an arbitrary sample.
 
 **Second correction to the latency record.** In this probe three edges appeared
 within **30s**, against ~330–370s for single writes earlier. Latency is
@@ -564,29 +567,65 @@ nonsense tokens precisely so the deterministic judge can match them
 unambiguously, and that same quality is what makes them unextractable. The tool
 and the provider are each internally consistent and mutually incompatible.
 
-**Status: stages 1–2 passed, stage 3 incomplete (assumption 2 untestable),
-stage 4 not started and not startable. `unverified = True` stays set. No Zep
-numbers exist and nothing is published.**
+### Status (ruling 2026-07-28)
 
-Decision needed, none of it the implementer's:
+**Zep: not measurable by the current instrument. Mechanism: selective silent
+extraction. No committed unblock date.**
 
-1. **Rewrite pack values as natural-sounding facts.** Would likely fix
-   extraction, but weakens judge precision and changes what Mem0 and every
-   future adapter are measured on — the Mem0 figures would need regenerating
-   for comparability.
-2. **Per-adapter value sets.** Keeps the deterministic judge, breaks
-   cross-provider comparability outright.
-3. **Read Zep at `scope="episodes"`.** Sidesteps extraction entirely, but
-   bypasses the knowledge layer and guarantees a `stale_reuse` FAIL by
-   construction, since a raw ingest log never invalidates. Rejected before for
-   that reason; still rejected.
-4. **Declare Zep out of scope until the LLM judge is calibrated**, as the
-   stage-1 ruling anticipated — the mechanism turned out to be non-extraction
-   rather than paraphrase, but the conclusion is the same.
+Stages 1–2 passed, stage 3 incomplete (assumption 2 untestable), stage 4 not
+started and not startable. `unverified = True` stays set. No Zep numbers exist
+and nothing is published.
 
-Recommendation: 4, with 1 evaluated separately on its merits for the pack as a
-whole rather than as a Zep workaround. Option 1 changes the benchmark for every
-provider to accommodate one, which is the wrong reason to change an instrument.
+**Correction to an earlier recommendation.** This entry previously proposed
+deferring Zep "until the LLM judge is calibrated". That was wrong reasoning and
+is withdrawn: **non-extraction is not a judge problem.** A judge of any kind
+classifies whether a returned answer relies on a value; a semantic judge cannot
+classify a fact that was never materialised, because there is nothing in the
+retrieval path to reason about. Tying this to judge calibration would have
+implied a fix that calibration cannot deliver, and set an unblock date that
+does not exist.
+
+Options 1 (rewrite pack values), 2 (per-adapter value sets) and 3 (read
+episodes) are **rejected**. Pack values are not to be rewritten.
+
+### OPEN RESEARCH QUESTION — post-sprint, not now
+
+Should scenario values be **realistic rather than distinctive nonsense**, for
+external validity? Real customer memory holds plan names, cities and dates, not
+`zephyr-6621`. A pack built from realistic values might measure behaviour
+closer to production — at some cost to judge precision, since realistic values
+collide and recur.
+
+To be decided **on evidence, separately, and never as a provider workaround**.
+The distinction matters: changing the instrument because one provider is
+awkward corrupts every other measurement taken with it. If realistic values are
+right, they are right on their own merits and the Mem0 figures get regenerated
+deliberately, not as a side effect.
+
+### CANDIDATE FINDING — not publishable
+
+**A write can process successfully and materialise nothing, with no signal
+distinguishing stored from discarded.** Observed on Zep: `graph.add` returns an
+episode, the episode reaches `processed=True` on schedule, and no edge is ever
+created. Nothing in the API distinguishes that outcome from one where a fact
+was stored — the caller sees success either way.
+
+If it generalises, it is a genuine lifecycle hazard: an agent writes a fact,
+every status is green, and the fact is simply not there. That is the class of
+failure this project exists to surface.
+
+**Not publishable as it stands, and no rate may be quoted.** Which values
+extract depends on tokens we invented, so any proportion is an artifact of our
+sample rather than a property of the provider. Before this becomes a claim it
+needs a model of what actually drives extraction — a hypothesis about what the
+extractor treats as a fact, tested against values chosen to probe that
+hypothesis rather than values chosen for judge convenience.
+
+### Roadmap change (ruling 2026-07-28)
+
+**LangGraph moves ahead of any further Zep work.** Before it starts, write a
+one-page **adapter preflight** derived from the three surprises so far, and run
+it for every future adapter before any scenario executes.
 
 ### Earlier stage 1 probes (recorded because two were our error, not Zep's)
 

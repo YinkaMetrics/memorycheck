@@ -137,10 +137,17 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
    double correction, re-add-then-correct, multi-key interference, TTL with a
    non-expiring sibling, rescope-then-re-add, and cross-tenant suites
    (shared `user_id` across tenants, cross-tenant rescope).
-3. Zep adapter (code landed, **never run against live Zep** — no credential;
-   assumptions listed in `HANDOFF.md` need confirming before any Zep result
-   is quoted), then LangGraph store adapter.
-4. LLM judge — only after the calibration protocol has been run.
+3. **LangGraph store adapter.** Moved ahead of Zep (ruling 2026-07-28).
+   **Run `ADAPTER_PREFLIGHT.md` before any scenario executes** — every item
+   on it exists because skipping it already produced a false result.
+4. Zep — code landed but **not measurable by the current instrument**;
+   mechanism is selective silent extraction, no unblock date. Do not resume
+   without a founder decision. Not a judge-calibration problem: a judge
+   classifies answers, and nothing is materialised to classify.
+5. LLM judge — only after the calibration protocol has been run.
+
+Every new adapter runs the preflight first and keeps `unverified = True`
+until every item on it has an observed answer.
 
 Pack size is frozen at 15 (ruling 2026-07-27). If a pilot needs per-commit
 speed, split into tiers — smoke (~5) per-commit, full pack nightly/release —

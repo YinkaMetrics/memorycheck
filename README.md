@@ -98,7 +98,24 @@ memorycheck run scenarios --adapter http:memorycheck_http.yaml
 
 The contract is documented in [`src/memorycheck/adapters/http.py`](src/memorycheck/adapters/http.py), and `tests/test_http_adapter.py` is a working reference server. Set `supports_ttl: false` honestly: expiry checks will report **NOT TESTED** rather than silently passing.
 
-The adapter contract is deliberately small (`write / delete / query / reset`) and needs no read API. Native adapters for **Zep and LangGraph stores** are next on the roadmap.
+The adapter contract is deliberately small (`write / delete / query / reset`) and needs no read API.
+
+### Which adapter should you use?
+
+They do two different jobs, and the right choice is usually the shim.
+
+| | HTTP shim | Native adapters (`mem0`, `zep`, …) |
+|---|---|---|
+| **For** | **measuring your own stack** — your store, your retrieval, your agent | public benchmarking of a provider in isolation |
+| Measures | the system you actually ship | one component, wired the way we chose to wire it |
+| Runs | inside your infrastructure; no content leaves it | against a hosted provider with our credentials |
+| Status | **the supported path** | research artifacts, verified to differing degrees |
+
+**If you want to know whether your agent forgets correctly, use the HTTP shim.** It is the supported path, it exercises the retrieval and prompting you actually run, and it keeps your data in your network. A native adapter tells you how one provider behaves under *our* integration choices — useful for comparing stores, not a substitute for testing your own stack.
+
+Native adapters also carry our decisions about how to drive each provider, and those decisions change the result: the Mem0 adapter stores values verbatim, and the Zep adapter honours Zep's own liveness metadata. Read the per-adapter notes before quoting anything from one.
+
+A native adapter that has not been fully verified against its provider declares `unverified`, prints a warning to stderr before running, and stamps every report it produces. Do not quote figures from one.
 
 ## Mem0
 
@@ -207,15 +224,16 @@ export ZEP_API_KEY=...
 memorycheck run scenarios --adapter zep
 ```
 
-> **Status: unverified. Verification is under way and incomplete.** The adapter
-> is written against the real `zep-cloud` 3.25.0 SDK surface and is exercised
-> offline through the full 15-scenario suite with a fake client. Staged
-> verification against the live service has begun and has **not** completed;
-> it surfaced an open question about how this harness and a knowledge-graph
-> provider fit together, which is being worked through before any results are
-> discussed. **There are no Zep results to report and none should be inferred
-> from this section.** Treat the adapter as a starting point, not a
-> measurement.
+> **Status: not measurable by the current instrument. No unblock date.** The
+> adapter is written against the real `zep-cloud` 3.25.0 SDK surface and is
+> exercised offline through the full 15-scenario suite with a fake client.
+> Staged verification against the live service stopped partway: some scenario
+> values never materialise as graph facts, so their writes cannot be confirmed
+> and no aggregate figure would mean anything. That is a limitation of this
+> harness meeting a knowledge-graph provider, **not a defect in Zep**, and it
+> is not a judge-calibration problem — a judge classifies answers, and there is
+> nothing to classify when nothing was materialised. **There are no Zep results
+> and none should be inferred from this section.**
 
 Zep is a temporal knowledge graph rather than a flat store, which changes the
 mapping:

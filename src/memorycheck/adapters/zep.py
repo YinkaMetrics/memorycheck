@@ -119,11 +119,11 @@ class ZepAdapter(MemoryAdapter):
     supports_ttl = False  # Zep validity is wall-clock; ours is logical
     unverified = True  # staged verification incomplete — see HANDOFF.md
     unverified_note = (
-        "staged verification against live Zep is incomplete and blocked: "
-        "roughly 2 in 5 of the scenario pack's values never materialise as "
-        "graph edges (extraction is content-dependent), so those writes "
-        "cannot be confirmed and any aggregate figure would be an artifact "
-        "of our own value choices rather than a measurement of Zep"
+        "not measurable by the current instrument — staged verification "
+        "stopped at stage 3. Some scenario values never materialise as graph "
+        "edges (selective silent extraction), so those writes cannot be "
+        "confirmed and any aggregate figure would describe our own value "
+        "choices rather than Zep. No unblock date."
     )
 
     def __init__(self) -> None:
