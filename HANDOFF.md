@@ -324,6 +324,88 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-28 — Task 5: HTTP shim starter kit (pilot delivery path)
+
+### 1. What shipped
+
+- **`memorycheck doctor --adapter http:config.yaml`** (`src/memorycheck/doctor.py`)
+  — nine contract checks, each with the exact fix, exit 1 on any failure.
+- **`examples/shim/`** — `fastapi_shim.py`, `flask_shim.py`,
+  `langgraph_shim.py`, `config.yaml`, and an integration guide written for an
+  engineer who has never seen the repo.
+- **`tests/test_doctor.py`** — doctor run against deliberately broken shims
+  over real HTTP.
+- README: starter kit linked as the supported pilot path.
+
+Checks: reset responds, write accepted, query returns an `answer` **string**,
+a written fact reaches the answer (with latency), another user cannot see it,
+another tenant cannot see it, delete makes a fact unreachable, reset clears,
+advance_time (SKIP when `supports_ttl: false`).
+
+Doctor stops after the first failure if `reset` or `write` is broken, rather
+than printing a cascade of meaningless downstream failures.
+
+### 2. Findings
+
+**Verified end to end, not just unit tested.** All three templates pass doctor
+over real HTTP, and the full 15 × 2 pack runs through the FastAPI/LangGraph
+shim to a clean PASS (46/46 current-fact, 0/10 stale, 0/22 scope, 0/18
+deletion). The delivery path a pilot would follow has been walked start to
+finish.
+
+**Broken-shim tests found a real bug in our own HTTP adapter.** The
+`_NonStringAnswer` case passed doctor when it should have failed:
+`HTTPAdapter` did `str(data["answer"])`, silently coercing a dict into
+`"{'text': ...}"`. That is worse than a crash — the repr would then be fed to
+the judge, so a broken response shape could produce arbitrary findings instead
+of a clear error. Now rejected explicitly with the type named. This is exactly
+what ruling 4 anticipated: a conformance checker that passes a broken shim is
+worse than none, and writing the broken cases is what surfaced it.
+
+Broken shims covered: no-op delete (soft delete retrieval ignores), leaky
+scoping (tenant filter without user), wrong response field, non-string answer,
+reset that does not clear, unreachable server. Each asserted caught, and a test
+asserts **every** failure carries a non-empty fix.
+
+### 3. Decisions
+
+- **Doctor is generic over adapters**, not HTTP-only — it uses the adapter
+  contract, so `doctor --adapter langgraph:memory` works too. Remedies are
+  written for the shim because that is the supported path.
+- **Convergence is measured, not assumed.** Doctor polls and reports the
+  observed latency plus a suggested timeout (~4x observed), so invariant 10 is
+  sized from the customer's stack. This is the preflight lesson applied to
+  customers rather than to us.
+- **Probe values carry a `memorycheck-doctor` marker** so anything left behind
+  in a customer's store is identifiable and purgeable.
+- **`langgraph_shim.py` exists to be diffed against.** The adapter is verified
+  and passes the pack, so a customer whose stack fails can run both and see
+  whether the difference is theirs or ours.
+- **Templates are deliberately runnable before wiring**, so an integrator sees
+  green before touching their own code — the fastest way to separate "the
+  harness works" from "my stack has a bug".
+
+### 4. FOR STRATEGY
+
+- **The paraphrase limit will bite pilots at decision 2.** A customer who wires
+  their real agent into `/query` rather than templating will see
+  `missing_current_fact` whenever the agent paraphrases a value. The guide says
+  so plainly and suggests starting with the store — but this is the first place
+  the deterministic judge's known recall limit meets a paying user, and it will
+  generate support questions before the LLM judge exists.
+- **Doctor does not test correction.** It covers write, read, scope, delete and
+  reset, but not "a second write supersedes the first" — that is the pack's
+  job. Arguably a tenth check would catch the most common store defect before
+  a full run. Deliberately left out to keep doctor about the *contract* rather
+  than about memory behaviour; worth revisiting if pilots hit it.
+
+### 5. Next
+
+Saturday: Mem0 three-arm experiment at quota reset, then the pending regen.
+Zep remains halted.
+
+---
+
 ## 2026-07-28 — Task 4: LangGraph store adapter (roadmap item 3) — PASSES
 
 ### 1. What shipped

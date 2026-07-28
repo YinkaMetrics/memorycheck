@@ -1,5 +1,6 @@
 """memorycheck CLI.
 
+  memorycheck doctor --adapter http:your-config.yaml   # check a shim first
   memorycheck validate scenarios/
   memorycheck run scenarios/ --adapter reference:naive --report-md out/report.md
   memorycheck list-adapters
@@ -14,6 +15,7 @@ import sys
 
 from .adapters import load_adapter
 from .adapters.base import AdapterError
+from .doctor import print_report, run_doctor
 from .judge import load_judge
 from .ledger import ScenarioError
 from .oracle import evaluate
@@ -83,6 +85,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 1 if summary["gate"]["verdict"] == "FAIL" else 0
 
 
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    adapter = load_adapter(args.adapter)
+    _warn_if_unverified(adapter)
+    report = run_doctor(adapter, timeout=args.timeout)
+    print_report(report, adapter.name)
+    return 1 if report.failed else 0
+
+
 def _cmd_list_adapters(_: argparse.Namespace) -> int:
     print("  reference:strict   in-process store honouring the full lifecycle (demo: passes)")
     print("  reference:naive    ignores supersession, deletion and TTL (demo: fails P1/P2)")
@@ -118,6 +128,16 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("--report-json", default=None, help="write JSON evidence here")
     p_run.add_argument("--report-md", default=None, help="write markdown evidence here")
     p_run.set_defaults(func=_cmd_run)
+
+    p_doc = sub.add_parser(
+        "doctor",
+        help="check a shim against the adapter contract before running scenarios",
+    )
+    p_doc.add_argument("--adapter", default="http:memorycheck_http.yaml",
+                       help="adapter spec, e.g. http:your-config.yaml")
+    p_doc.add_argument("--timeout", type=float, default=30.0,
+                       help="seconds to wait for a write to become readable")
+    p_doc.set_defaults(func=_cmd_doctor)
 
     p_list = sub.add_parser("list-adapters", help="show available adapters")
     p_list.set_defaults(func=_cmd_list_adapters)

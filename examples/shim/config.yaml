@@ -1,0 +1,16 @@
+# memorycheck HTTP adapter config. Point it at your shim.
+#
+#   memorycheck doctor --adapter http:examples/shim/config.yaml
+#   memorycheck run scenarios --adapter http:examples/shim/config.yaml
+
+base_url: "http://127.0.0.1:8808"
+
+# Be honest here. True means "I can age stored facts by N logical steps on
+# demand" — not "I have a wall-clock TTL". False makes expiry checks report
+# NOT TESTED rather than passing without being exercised.
+supports_ttl: false
+
+timeout_seconds: 30
+
+# Optional: name an env var holding a bearer token, sent as Authorization.
+# auth_token_env: MEMORYCHECK_HTTP_TOKEN

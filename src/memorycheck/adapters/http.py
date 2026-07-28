@@ -97,8 +97,16 @@ class HTTPAdapter(MemoryAdapter):
     def query(self, scope: Scope, prompt: str, seed: int = 0) -> QueryResult:
         data = self._post("query", {**self._ids(scope), "prompt": prompt, "seed": seed})
         if "answer" not in data:
-            raise HTTPAdapterError("query response must contain 'answer'")
-        return QueryResult(
-            answer=str(data["answer"]),
-            retrieved=list(data.get("retrieved", [])),
-        )
+            raise HTTPAdapterError(
+                "query response must contain 'answer' (got keys: "
+                f"{sorted(data)[:8]})"
+            )
+        answer = data["answer"]
+        if not isinstance(answer, str):
+            # Deliberately not coerced. str() on a dict or list yields a
+            # repr that the judge would then match against — turning a broken
+            # response shape into arbitrary findings instead of a clear error.
+            raise HTTPAdapterError(
+                f"query 'answer' must be a string, got {type(answer).__name__}"
+            )
+        return QueryResult(answer=answer, retrieved=list(data.get("retrieved", [])))

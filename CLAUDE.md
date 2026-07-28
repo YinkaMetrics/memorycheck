@@ -26,7 +26,13 @@ after every change.
   (strict/naive/leaky demo), `http.py` (customer shim), `mem0.py` (hosted
   Mem0), `zep.py` (hosted Zep, unverified live), `NullAdapter` (no-memory
   baseline).
-- `cli.py` — `validate` / `run` / `list-adapters`.
+- `doctor.py` — shim conformance check. Runs before any scenario: endpoint
+  contract, response shape, scope isolation round-trip, deletion actually
+  removing, and write→read convergence to size timeouts from the customer's
+  stack. Every failure carries its exact fix.
+- `cli.py` — `doctor` / `validate` / `run` / `list-adapters`.
+- `examples/shim/` — the pilot delivery path: FastAPI, Flask and LangGraph
+  templates plus the integration guide.
 
 ## Non-negotiable invariants
 

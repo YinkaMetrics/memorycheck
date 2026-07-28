@@ -90,13 +90,48 @@ The bundled pack is 15 scenarios covering correction and double-correction, dele
 
 ## Your stack: the HTTP shim
 
-Expose four small POST endpoints in front of your memory store + agent (typically <100 lines in your codebase) — `reset`, `write`, `delete`, `query` — and run:
+**This is the supported path.** Expose four small POST endpoints in front of your memory store and agent — `reset`, `write`, `delete`, `query`, typically under 100 lines — and memorycheck drives the lifecycle through them. Everything runs inside your network.
+
+**Start with the [starter kit](examples/shim/)** — runnable templates and a step-by-step integration guide written for someone who has never seen this repo:
+
+| | |
+|---|---|
+| [`examples/shim/README.md`](examples/shim/README.md) | the integration guide: contract, the three decisions, troubleshooting |
+| [`fastapi_shim.py`](examples/shim/fastapi_shim.py) | FastAPI template — start here |
+| [`flask_shim.py`](examples/shim/flask_shim.py) | Flask template |
+| [`langgraph_shim.py`](examples/shim/langgraph_shim.py) | backed by a real LangGraph store — a known-good reference to diff yours against |
+
+Each template runs standalone before you wire anything up, so you see green first.
+
+### Check your shim before running scenarios
 
 ```bash
-memorycheck run scenarios --adapter http:memorycheck_http.yaml
+memorycheck doctor --adapter http:examples/shim/config.yaml
 ```
 
-The contract is documented in [`src/memorycheck/adapters/http.py`](src/memorycheck/adapters/http.py), and `tests/test_http_adapter.py` is a working reference server. Set `supports_ttl: false` honestly: expiry checks will report **NOT TESTED** rather than silently passing.
+`doctor` exercises every endpoint, checks the response contract, round-trips scope isolation across users and tenants, confirms deletion actually removes, and measures write→read convergence so timeouts are sized from your stack rather than guessed:
+
+```
+  [ok  ] reset endpoint responds             reset accepted
+  [ok  ] write endpoint accepts a fact       write accepted
+  [ok  ] query returns an answer string      answer is a 57-char string
+  [ok  ] a written fact reaches the answer   visible after 0.04s
+  [ok  ] another user cannot see it          no cross-scope visibility
+  [ok  ] another tenant cannot see it        no cross-scope visibility
+  [ok  ] delete makes a fact unreachable     value no longer influences answers
+  [ok  ] reset clears prior state            state cleared
+  [skip] advance_time accepted               supports_ttl is false — expiry will report NOT TESTED
+```
+
+Every failure prints the exact fix, and it exits non-zero so it can gate CI. Run it first: a scenario run against a misconfigured shim produces findings that look like memory bugs and are actually integration bugs — the most expensive kind of false result, because it sends someone hunting through their retrieval layer for a defect the harness caused.
+
+Then run the pack:
+
+```bash
+memorycheck run scenarios --adapter http:memorycheck_http.yaml --seeds 2
+```
+
+The wire contract is also documented in [`src/memorycheck/adapters/http.py`](src/memorycheck/adapters/http.py). Set `supports_ttl: false` honestly: expiry checks report **NOT TESTED** rather than silently passing.
 
 The adapter contract is deliberately small (`write / delete / query / reset`) and needs no read API.
 
