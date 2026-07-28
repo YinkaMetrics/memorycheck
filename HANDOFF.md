@@ -324,6 +324,110 @@ general retrieval noise.
    against a fabricated failure. FOR STRATEGY item closed.
 4. Proceed to roadmap item 3: Zep adapter, then LangGraph store.
 
+## 2026-07-28 — Task 6: paraphrase detection, correction INFO, gating proposal
+
+### 1. What shipped (rulings 1 and 3)
+
+**Paraphrase detection in doctor.** Distinguishing "your write never landed"
+from "your agent paraphrased it" needs a second signal, and the contract
+already has one: the optional `retrieved` field.
+
+| Value in `answer` | Value in `retrieved` | Verdict |
+|---|---|---|
+| yes | — | `quoting`, PASS |
+| no | yes | `paraphrasing`, **WARN** |
+| no | no | `unknown`, convergence **FAIL** |
+
+The WARN states that `missing_current_fact` will produce false failures,
+recommends `--fail-on p1`, and recommends pointing `/query` at the store now
+and re-running with the agent once the semantic judge exists. It does **not**
+fail the run: a paraphrasing agent is a legitimate design, not a contract
+breach.
+
+Note on invariant 2 (never grade from `retrieved`): doctor does not grade. It
+reads `retrieved` only to explain *why* a value was absent, and derives no
+verdict beyond that distinction. The docstring says so at the call site.
+
+**`answering_layer` stamped into every report** — JSON field plus the Markdown
+header, and a line in the terminal scorecard. Classified from the run's own
+observations (`detect_answering_layer`), not from a separate probe, so the
+stamp describes that report's evidence. Paraphrasing is asserted only on
+positive evidence: a value retrieval clearly found that the answer did not
+quote. The Markdown header carries the caveat inline when paraphrasing, so a
+`missing_current_fact` rate cannot be read out of context.
+
+**Correction reported as INFO** (ruling 3): a second write to the same key,
+then a report of whether both values remain retrievable or only the new one —
+`accumulates` or `supersedes`, explicitly labelled "Not a verdict". An
+integrator learns which store semantics they have before the pack runs.
+
+Two bugs surfaced writing this:
+
+- **A sequencing bug I introduced.** Adding the correction probe before the
+  delete check meant delete was testing the *superseded* value, which a
+  keyed store had already dropped — so it would have passed trivially. Delete
+  now tests the current value.
+- **A faulty fake.** The accumulating test store cleared one dict on reset and
+  wrote to another; doctor's `reset_clears` caught it. The fake was wrong, not
+  the checker.
+
+Doctor is now 11 checks and 13 tests, all passing.
+
+### 2. Ruling 2 — proposal, NOT implemented
+
+**Question:** when the answering layer paraphrases, `missing_current_fact`
+produces false failures. How should it degrade, and how does that interact
+with the severity model?
+
+**Option A — new `WARNING` status** alongside PASS/FAIL/NOT_TESTED; the gate
+ignores it. Explicit, but adds a fourth status to a three-valued model that
+every consumer of the JSON already understands, for one special case.
+
+**Option B — reuse `NOT_TESTED`** *(recommended)*. When
+`answering_layer == paraphrasing`, `missing_current_fact` reports NOT_TESTED
+with detail "answering layer paraphrases; the deterministic judge cannot
+verify this". No new status, and it is semantically exact — we genuinely
+cannot test it with this judge.
+
+The precedent is already in the codebase and is the same shape: TTL reports
+NOT_TESTED when the adapter cannot express logical time. That is "this
+adapter/judge combination cannot test this check", which is precisely the
+paraphrase case. It also satisfies invariant 3 (NOT_TESTED over silent pass)
+rather than working around it.
+
+**Option C — demote severity to P3.** Rejected: invariant 5 fixes the severity
+model, and a third tier would pollute every rate and gate expression.
+
+**Option D — no mechanism, just document `--fail-on p1`.** Zero code, but the
+evidence pack still shows a wall of red FAILs that a reader must know to
+discount. That is the failure mode this project exists to avoid.
+
+**Interactions to weigh before approving B**, two of which are not obvious:
+
+1. **`current_fact_accuracy` narrows rather than distorts.** NOT_TESTED
+   findings are already excluded from rate denominators, so the metric would
+   report over the remaining opportunities — and if *all* are untestable it
+   reports NOT TESTED, which is the honest headline.
+2. **The utility-delta guard is lost.** `memory_utility_delta` derives from
+   `current_fact_accuracy`; if that becomes NOT_TESTED the delta is `None`.
+   That guard is what stops a system passing by never remembering anything.
+   Under paraphrasing we would lose it, so a paraphrasing run cannot detect
+   the forget-everything failure mode at all. **This is the strongest argument
+   for keeping the run honest by other means, and it should be stated in the
+   report rather than discovered later.**
+3. **P1 checks are sound but not complete.** Worth sharpening the phrasing
+   used in the ruling: paraphrasing cannot *invent* a leak, so there are no
+   false P1 alarms — but a paraphrased leaked value would not be detected
+   either. So P1 findings remain trustworthy while P1 *absence* becomes weaker
+   evidence. A clean P1 result under paraphrasing should not be read as proof
+   of isolation.
+
+**Recommendation: Option B**, with the report stating plainly that the utility
+delta is unavailable and that clean P1s are weaker evidence under paraphrasing.
+Not implemented pending your decision.
+
+---
+
 ## 2026-07-28 — Task 5: HTTP shim starter kit (pilot delivery path)
 
 ### 1. What shipped

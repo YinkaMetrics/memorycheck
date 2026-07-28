@@ -62,11 +62,20 @@ answer  = your_agent.respond(prompt, context=context)
 return {"answer": answer}
 ```
 
-Both are valid; they answer different questions. Note that the default judge
-matches **exact values**, so an agent that paraphrases (`"the annual plan"`
-instead of `"scale-annual-2026"`) reads as a miss. That is a known limit of the
-deterministic judge, not a bug in your stack — start with the store, then move
-to the agent once the store is clean.
+Both are valid; they answer different questions. The default judge matches
+**exact values**, so an agent that paraphrases (`"the annual plan"` instead of
+`"scale-annual-2026"`) reads as a miss. That is a known limit of the
+deterministic judge, not a bug in your stack.
+
+`doctor` detects this for you and says so. If your agent paraphrases, include
+the raw hits in the optional `"retrieved"` field — that is what lets doctor
+tell paraphrasing apart from a write that never landed. It will then report
+`answering layer: paraphrasing`, warn that `missing_current_fact` will produce
+false failures, and recommend `--fail-on p1`. Every report is stamped with the
+answering layer, so a rate can never be read out of context.
+
+Suggested order: point `/query` at your store first and get the lifecycle
+clean, then re-run with the full agent.
 
 **Decision 3 — TTL.** memorycheck's clock is logical: it asks you to age facts
 by N *steps*, not to wait N seconds. Most stacks cannot, so set

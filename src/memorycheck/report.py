@@ -50,6 +50,7 @@ def build_summary(
     fail_on: str,
     unverified: bool = False,
     unverified_note: str = "",
+    answering_layer: str = "unknown",
 ) -> dict:
     checks = {c: _rate(findings, c) for c in RATE_CHECKS}
     ok, total = current_fact_accuracy(findings)
@@ -81,6 +82,11 @@ def build_summary(
         # however it is later copied out of this file.
         "adapter_unverified": unverified,
         "adapter_unverified_note": unverified_note if unverified else "",
+        # How the system under test renders stored values. A
+        # missing_current_fact rate is unreadable without this: a paraphrasing
+        # answering layer produces false failures on that check, while the P1
+        # checks stay sound.
+        "answering_layer": answering_layer,
         "judge": judge_name,
         "seeds": seeds,
         "scenarios": scenario_count,
@@ -135,6 +141,10 @@ def to_markdown(summary: dict) -> str:
         lines.append("")
     lines += [
         f"- **Adapter:** `{summary['adapter']}`   **Judge:** `{summary['judge']}`",
+        f"- **Answering layer:** `{summary.get('answering_layer', 'unknown')}`"
+        + ("  — values are paraphrased, so `missing_current_fact` reports false "
+           "failures here; the P1 checks remain sound. Prefer `--fail-on p1`."
+           if summary.get("answering_layer") == "paraphrasing" else ""),
         f"- **Scenarios:** {summary['scenarios']}   **Seeds:** {summary['seeds']}   "
         f"**Generated:** {summary['generated_at']}",
         f"- **Gate (fail on ≤{summary['gate']['fail_on']}):** "
@@ -204,6 +214,7 @@ def print_summary(summary: dict) -> None:
     width = max(len(r[0]) for r in rows) + 2
     for name, value in rows:
         print(f"  {name.ljust(width)}{value}")
+    print(f"  {'answering_layer'.ljust(width)}{summary.get('answering_layer', 'unknown')}")
     print(f"\n  GATE [fail on <= {summary['gate']['fail_on']}]: {summary['gate']['verdict']} "
           f"({summary['gate']['blocking_findings']} blocking findings)")
     if summary.get("adapter_unverified"):

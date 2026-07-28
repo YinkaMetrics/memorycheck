@@ -13,7 +13,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from memorycheck.adapters.http import HTTPAdapter
-from memorycheck.doctor import FAIL, PASS, SKIP, run_doctor
+from memorycheck.doctor import (
+    FAIL, INFO, PARAPHRASING, PASS, QUOTING, SKIP, UNKNOWN, WARN, run_doctor,
+)
 
 
 class _Store:
@@ -73,6 +75,57 @@ class _NonStringAnswer(_Store):
 class _ResetNoOp(_Store):
     def reset(self, namespace):
         pass
+
+
+class _Paraphrasing(_Store):
+    """A perfectly good agent that summarises instead of quoting. Retrieval
+    finds the value; the answer never says it."""
+
+    def answer(self, tenant, user, prompt):
+        found = self.visible(tenant, user)
+        if not found:
+            return "I don't have anything on file for them."
+        return f"I found {len(found)} thing(s) on file for this user."
+
+    def query_payload(self, tenant, user, prompt):
+        return {
+            "answer": self.answer(tenant, user, prompt),
+            "retrieved": [{"key": k, "value": v} for k, v in self.visible(tenant, user)],
+        }
+
+
+class _ParaphrasingNoRetrieved(_Paraphrasing):
+    """Paraphrases and returns no `retrieved`, so nothing can tell the
+    difference between this and a lost write."""
+
+    def query_payload(self, tenant, user, prompt):
+        return {"answer": self.answer(tenant, user, prompt)}
+
+
+class _Accumulating(_Store):
+    """Correction appends rather than overwriting — Mem0's documented design."""
+
+    def __init__(self):
+        super().__init__()
+        self.history: dict[tuple, list[str]] = {}
+
+    def reset(self, namespace):
+        super().reset(namespace)
+        self.history.clear()
+
+    def write(self, tenant, user, key, value):
+        self.history.setdefault((tenant, user, key), []).append(value)
+
+    def delete(self, tenant, user, key):
+        self.history.pop((tenant, user, key), None)
+
+    def visible(self, tenant, user):
+        return [
+            (k, v)
+            for (t, u, k), vals in self.history.items()
+            if (t, u) == (tenant, user)
+            for v in vals
+        ]
 
 
 def _make_handler(store):
@@ -183,6 +236,60 @@ def test_every_failure_carries_a_fix(serve):
         report = run_doctor(serve(store), timeout=3)
         for check in report.failed:
             assert check.fix.strip(), f"{check.id} failed without telling anyone how to fix it"
+
+
+# ------------------------------------------- paraphrasing and correction info
+
+
+def test_detects_a_paraphrasing_answering_layer(serve):
+    report = run_doctor(serve(_Paraphrasing()), timeout=3)
+    assert report.answering_layer == PARAPHRASING
+    assert _status(report, "answering_layer") == WARN
+    # A paraphrasing agent is legitimate, so it must not fail the contract.
+    assert report.ok, [c.title for c in report.failed]
+    fix = next(c.fix for c in report.checks if c.id == "answering_layer")
+    assert "--fail-on p1" in fix
+    assert "missing_current_fact" in fix
+
+
+def test_paraphrasing_without_retrieved_is_indistinguishable_from_a_lost_write(serve):
+    # Nothing can separate these two, so doctor must not guess: it fails the
+    # convergence check and says how to make the difference visible.
+    report = run_doctor(serve(_ParaphrasingNoRetrieved()), timeout=2)
+    assert report.answering_layer == UNKNOWN
+    assert _status(report, "convergence") == FAIL
+    assert "retrieved" in next(c.fix for c in report.checks if c.id == "convergence")
+
+
+def test_quoting_layer_is_reported_as_quoting(serve):
+    report = run_doctor(serve(_Store()), timeout=3)
+    assert report.answering_layer == QUOTING
+    assert _status(report, "answering_layer") == PASS
+
+
+def test_correction_semantics_reported_as_info_without_a_verdict(serve):
+    superseding = run_doctor(serve(_Store()), timeout=3)
+    accumulating = run_doctor(serve(_Accumulating()), timeout=3)
+
+    for report in (superseding, accumulating):
+        check = next(c for c in report.checks if c.id == "correction_semantics")
+        assert check.status == INFO, "correction is INFO, never pass/fail"
+        assert "Not a verdict" in check.fix
+    assert "supersedes" in next(
+        c.detail for c in superseding.checks if c.id == "correction_semantics"
+    )
+    assert "accumulates" in next(
+        c.detail for c in accumulating.checks if c.id == "correction_semantics"
+    )
+    # An accumulating store is not a contract failure — the pack judges it.
+    assert accumulating.ok, [c.title for c in accumulating.failed]
+
+
+def test_delete_check_uses_the_current_value_not_the_superseded_one(serve):
+    # After the correction probe a superseding store has already dropped the
+    # first value, so testing it here would pass trivially.
+    report = run_doctor(serve(_NoOpDelete()), timeout=3)
+    assert _status(report, "delete") == FAIL
 
 
 def test_unreachable_shim_fails_at_the_first_check(tmp_path):

@@ -15,7 +15,7 @@ import sys
 
 from .adapters import load_adapter
 from .adapters.base import AdapterError
-from .doctor import print_report, run_doctor
+from .doctor import detect_answering_layer, print_report, run_doctor
 from .judge import load_judge
 from .ledger import ScenarioError
 from .oracle import evaluate
@@ -75,6 +75,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         fail_on=args.fail_on,
         unverified=getattr(adapter, "unverified", False),
         unverified_note=getattr(adapter, "unverified_note", ""),
+        answering_layer=detect_answering_layer(suite["runs"]),
     )
     print_summary(summary)
     write_reports(summary, args.report_json, args.report_md)
