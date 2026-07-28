@@ -32,9 +32,14 @@ Three arms, because two cannot separate the candidate mechanisms:
 Read the arms together. (a) alone says nothing; the pairs (a) vs (b) and
 (a) vs (c) are what carry information.
 
-    export MEM0_API_KEY=...
-    python diagnostics/readd_after_delete.py            # prints cost, then asks
-    python diagnostics/readd_after_delete.py --yes      # runs without prompting
+    python diagnostics/readd_after_delete.py             # prints cost, then asks
+    python diagnostics/readd_after_delete.py --yes       # no prompt
+    python diagnostics/readd_after_delete.py --dry-run   # cost only, spends nothing
+
+The key is read from MEM0_API_KEY, falling back to ~/.mem0/config.json, so no
+export is needed. Results are written to diagnostics/results/ as well as
+printed, because a transcript is easy to lose and this run is not cheap to
+repeat.
 
 SEARCH is the scarce counter, so the script prints its estimated cost before
 spending anything and reports actual usage per arm from response headers.
@@ -46,9 +51,11 @@ its own, which is how the original investigation exhausted the quota.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import httpx
 
@@ -67,6 +74,21 @@ COST_ESTIMATE = {
     "b_varied": 2 + 2 + 1 + 4,
     "c_settle_then_identical": 2 + 2 + 1 + _MAX_POLLS,
 }
+
+
+def resolve_api_key() -> str | None:
+    """Environment first, then the Mem0 CLI's own config, so Saturday needs no
+    export. The value is never printed."""
+    key = os.environ.get("MEM0_API_KEY")
+    if key:
+        return key
+    cfg = Path.home() / ".mem0" / "config.json"
+    if cfg.exists():
+        try:
+            return json.loads(cfg.read_text()).get("platform", {}).get("api_key") or None
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def quota_remaining(api_key: str) -> int | None:
@@ -161,23 +183,34 @@ class Arm:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--yes", action="store_true", help="skip the cost prompt")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the cost estimate and exit without spending")
     args = ap.parse_args()
 
-    api_key = os.environ.get("MEM0_API_KEY")
+    # Four quota probes (one up front, one either side of each arm) are
+    # themselves SEARCH calls; count them so the estimate is not optimistic.
+    probes = 1 + 2 * len(COST_ESTIMATE)
+    total = sum(COST_ESTIMATE.values()) + probes
+    print("Estimated SEARCH cost (worst case, the scarce counter):")
+    for arm, cost in COST_ESTIMATE.items():
+        print(f"  {arm:26s} ~{cost:3d} units")
+    print(f"  {'quota probes':26s} ~{probes:3d} units")
+    print(f"  {'TOTAL':26s} ~{total:3d} units\n")
+
+    if args.dry_run:
+        print("dry run: nothing spent")
+        return 0
+
+    api_key = resolve_api_key()
     if not api_key:
-        print("MEM0_API_KEY is not set.", file=sys.stderr)
+        print("No Mem0 key: set MEM0_API_KEY or populate ~/.mem0/config.json.",
+              file=sys.stderr)
         return 2
     try:
         from mem0 import MemoryClient
     except ImportError:
         print('Mem0 SDK missing. pip install "mem0ai>=2.0.14"', file=sys.stderr)
         return 2
-
-    total = sum(COST_ESTIMATE.values())
-    print("Estimated SEARCH cost (worst case, the scarce counter):")
-    for arm, cost in COST_ESTIMATE.items():
-        print(f"  {arm:26s} ~{cost:3d} units")
-    print(f"  {'TOTAL':26s} ~{total:3d} units\n")
 
     remaining = quota_remaining(api_key)
     if remaining is not None and remaining >= 0:
@@ -239,6 +272,20 @@ def main() -> int:
               "  rather than forcing one of the branches above.")
     print("\nNo conclusion may be published from a single execution of this "
           "script. Re-run to establish stability first.")
+
+    out_dir = Path(__file__).resolve().parent / "results"
+    out_dir.mkdir(exist_ok=True)
+    out = out_dir / f"readd_after_delete_{stamp}.json"
+    out.write_text(json.dumps({
+        "run_at_epoch": stamp,
+        "poll_interval_s": POLL_INTERVAL,
+        "confirm_timeout_s": CONFIRM_TIMEOUT,
+        "extra_settle_s": EXTRA_SETTLE,
+        "estimated_search_units": total,
+        "results": results,
+        "caveat": "single execution; not a finding until reproduced",
+    }, indent=2))
+    print(f"results written to {out}")
     return 0
 
 

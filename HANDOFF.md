@@ -424,10 +424,36 @@ Guards against a vacuous pass, all satisfied:
   Untested beyond one observation; would need a `ttl_config` variant before it
   is a claim.
 
-### 6. Next
+### 6. Mem0 re-add experiment: armed and push-button
 
-Arm the Mem0 three-arm delete/re-add experiment as a single push-button script
-for Saturday's quota reset. Zep remains halted with no unblock date.
+`diagnostics/readd_after_delete.py` is ready to run the moment SEARCH quota
+resets on **2026-08-01**. No setup, no export:
+
+```bash
+python diagnostics/readd_after_delete.py --dry-run   # cost only, spends nothing
+python diagnostics/readd_after_delete.py             # prints cost, asks, runs
+```
+
+- **Key resolves itself** from `MEM0_API_KEY` or `~/.mem0/config.json`.
+- **Cost printed before anything is spent**, per arm: `a_identical` ~51,
+  `b_varied` ~9, `c_settle_then_identical` ~29, quota probes ~7 — **~96 units**
+  of a 1,000-unit period. The probes are themselves SEARCH calls and are now
+  counted, so the estimate is not quietly optimistic.
+- **Refuses to start below the estimate.** Verified: at the current 0 remaining
+  it exits 3 with `REFUSING TO RUN: need ~96, have 0` — a run that dies partway
+  proves nothing and spends the rest.
+- **Results are written to `diagnostics/results/`**, which is **gitignored**. A
+  transcript is easy to lose and this run is expensive to repeat, but the
+  finding is not publishable until ruled on, so a Saturday run cannot
+  accidentally publish Mem0 behaviour data. Promote a result into this file by
+  hand once it is cleared.
+- The reading of each arm is stated in the file **before** any run, and it
+  refuses to conclude from a single execution.
+
+### 7. Next
+
+Saturday: run the three arms twice, then the founder ruling, then the pending
+Mem0 15 × 2 regen on current `main`. Zep remains halted with no unblock date.
 
 ---
 

@@ -4,6 +4,11 @@ __pycache__/
 *.env
 secrets.*
 .DS_Store
+
+# Diagnostic run output. Deliberately not committed: these are open
+# investigations, and their results are not publishable until ruled on.
+# Promote a specific result into HANDOFF.md by hand when it is.
+diagnostics/results/
 .pytest_cache/
 dist/
 build/
