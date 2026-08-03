@@ -165,9 +165,12 @@ class Mem0Adapter(MemoryAdapter):
                 f"mem0 write {key!r}={value!r} for scope "
                 f"{scope.tenant_id}/{scope.user_id} was not retrievable after "
                 f"{waited:.1f}s — the store did not accept the write, so no "
-                "result from this run would be meaningful. Known trigger: "
-                "re-adding text identical to a value deleted moments earlier "
-                "(see HANDOFF, scenario 012)"
+                "result from this run would be meaningful. Evidenced trigger: "
+                "a write issued after a delete_all, even when the namespace "
+                "was polled until it read empty first — see reset() above, "
+                "where 6/14 writes were lost following a delete_all versus "
+                "0/10 with no preceding delete. Reading empty is not proof "
+                "the delete finished propagating."
             )
 
     def delete(self, scope: Scope, key: str) -> None:
