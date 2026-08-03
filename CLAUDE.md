@@ -152,6 +152,18 @@ stops short has not finished its task and must say which of the four steps it
 stopped at. Blocked work still gets an entry: the blocker, what was
 established anyway, and what remains unverified.
 
+**Any diagnostic run executed outside this environment must be promoted into
+`HANDOFF.md` by hand, citing its results filename.** `diagnostics/results/` is
+gitignored by design — those are open investigations whose output is not
+publishable until ruled on. The cost of that choice is that a run done on a
+laptop leaves no commit, no artefact and no trace here, so it is invisible to
+every future session. Write the numbers into the entry and cite the file
+(e.g. `readd_after_delete_1785797173.json`) so the raw output can be found
+again on the machine holding it. Say plainly when figures are reported rather
+than observed in-session — a promoted result is second-hand, and the log
+should not read as though the session measured it. **An unlogged run did not
+happen**, as far as the next session can tell.
+
 ### Merge authority (ruling 2026-08-03)
 
 Two tiers. Which tier a PR is in depends on **what it touches**, not on how

@@ -2185,3 +2185,125 @@ uninterpretable against the (a) baseline. Say if you want it the other way.
 External launch remains **HELD**.
 
 ---
+## 2026-08-03 — Arms (a)-(c) executed: clean sweep, and it settles less than it looks
+
+**Corrects the entry above.** That entry states "Arms (a)-(c) have never been
+executed". That was wrong. They ran on 2026-08-03 at 22:46:13 UTC, outside
+this environment, on the founder's machine — twelve minutes before the (d)/(e)
+commit `02b53bc` landed at 22:58:29 UTC, which is why the session writing that
+entry had no sight of them. The claim is withdrawn; the reasoning built on it
+is unaffected, and is in fact strengthened by the result below.
+
+**Provenance of these figures: reported, not observed here.** Results live in
+`diagnostics/results/readd_after_delete_1785797173.json`, which is gitignored
+and on a different machine. This session did not read that file and cannot
+verify it. Recorded as second-hand, per the promotion rule now in `CLAUDE.md`.
+
+### 1. What shipped
+
+Promotion of the run into this log, plus two consequences of it:
+`diagnostics/readd_after_delete.py`'s STATUS block corrected (it still said
+"NOT YET RUN", which was false and would have misled the next session), and a
+new `CLAUDE.md` rule requiring out-of-environment runs to be promoted by hand.
+
+### 2. Findings
+
+**The run.** Three arms, same-scope, one execution:
+
+| Arm | Outcome | Retrievable after | Reads | SEARCH units |
+|---|---|---|---|---|
+| `a_identical` | RE_ADD_VISIBLE | 0s | 4 | 5 |
+| `b_varied` | RE_ADD_VISIBLE | 0s | 4 | 5 |
+| `c_settle_then_identical` | RE_ADD_VISIBLE | 0s (after 60s settle) | 4 | 5 |
+
+SEARCH remaining after the run: **~977**. Actual spend **~22** against a ~96
+worst-case estimate.
+
+**Read against the discrimination matrix**, which was published in the entry
+above *before* these outcomes were known here:
+
+| Simulated behaviour | (a) | (b) | (c) | consistent with observed? |
+|---|---|---|---|---|
+| healthy | visible | visible | visible | **YES** |
+| content dedup, app-wide | LOST | visible | LOST | no — (a) would have failed |
+| delete reaping, same-scope | LOST | visible | visible | no — (a) would have failed |
+| cross-scope suppression, permanent | visible | visible | visible | **YES** |
+| cross-scope suppression, transient | visible | visible | visible | **YES** |
+
+**Ruled out:** content-level deduplication within an `app_id`, and same-scope
+delete reaping. Both were live candidates in the 2026-07-27 hypothesis list;
+both are now dead. That is real progress and it cost 22 units.
+
+**Not ruled out, and this is the part that matters:** the observed
+`visible / visible / visible` is the signature the matrix predicted would be
+**ambiguous across three behaviours**. Two of the three surviving candidates
+are cross-scope suppression — permanent and transient.
+
+**State it plainly: the clean sweep is not a clean bill of health.** It is
+exactly as consistent with a delete in one tenant's scope silently swallowing
+a write to another tenant's scope as it is with the store being healthy. Arms
+(a)-(c) cannot see the difference, because they never cross a scope boundary.
+Nobody should read "all three passed" as "012 refuted", "Mem0 is fine", or
+"the abort was spurious". The question `012` raised is **open**, and the
+instrument that can close it — arms (d)/(e) — has not run.
+
+**A near-miss on exactly that misreading.** The run predates commit `02b53bc`
+by twelve minutes, so the console output the operator saw came from the *old*
+interpretation guide: *"(a) succeeded -> the abort did not reproduce in
+isolation."* Hedged about load and sequence, but silent on the untested
+cross-scope condition. The rewritten guide now prints *"not reproduced
+SAME-SCOPE ... 012 is a cross-scope rescope, which (a)-(c) do not exercise at
+all. Read (d)/(e) before concluding anything."* The rewrite was not
+hypothetical tidying — the ambiguous outcome it guards against is the one that
+actually occurred.
+
+**Cost model, now with a measured anchor.** Estimated worst case ~96 units,
+actual ~22 — about 4.4x conservative. The gap is explained and expected: the
+worst case is the *failing* case, where an arm polls to `CONFIRM_TIMEOUT`.
+Every arm passed immediately (0s to retrievable, 4 reads each), so nothing
+polled. Measured cost of a **passing** arm is ~5 units; budget ~29 for one
+that fails. Applied to the unrun arms: (d)+(e) cost ~10 units if they pass and
+~58 if both reproduce the abort. The estimator is sound; it is pessimistic by
+design and should stay that way.
+
+**One execution is not a result.** The script refuses to conclude from a
+single run and so should we — the arms need a second execution before even the
+two exclusions above are treated as stable.
+
+### 3. Decisions
+
+- **The prior claim was withdrawn in the open**, at the top of this entry,
+  rather than quietly corrected in place. The previous entry is merged and
+  public; editing it silently would leave the log disagreeing with itself.
+- **STATUS block in the script corrected as part of this entry.** A file
+  saying "NOT YET RUN" about arms that have run is the kind of stale marker a
+  future session reasonably trusts.
+- **Out-of-environment runs are now promotable by rule**, not by luck. Added
+  to the Handoff protocol, including that promoted figures must be marked as
+  reported rather than observed.
+
+### 4. FOR STRATEGY
+
+- **The exclusions do not unblock publication.** Two mechanisms are dead, but
+  the surviving set still contains a cross-scope coupling, which is the most
+  serious candidate on the list. Nothing about `012` should go external on the
+  strength of this run.
+- **Priority ordering suggestion, founder's call:** (d)/(e) are now the
+  cheapest high-information spend available — ~10 units if they pass. They are
+  worth running *before* the 106-unit regen, since a cross-scope finding would
+  change how the regen's own 012 behaviour should be read.
+- Unchanged: whether to pin `mem0ai` 2.0.14 for the regen, whether the extras
+  should be exact pins, whether an open and contested #6017 changes the
+  publication plan, and when to fix the `get_all` pagination limitation.
+
+### 5. Next
+
+1. Run (d)/(e) on a machine with egress — ~10 units if they pass.
+2. Re-run (a)-(c) once more for stability, cheap at ~15.
+3. Full 15 × 2 regen (~106 units), which doubles as the reproduction test.
+4. Founder ruling before any of it touches published text — the regen and any
+   provenance edit are gated tier.
+
+External launch remains **HELD**.
+
+---

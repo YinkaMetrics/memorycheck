@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Discriminating experiment: why is a re-added value not retrievable?
 
-STATUS: written, NOT YET RUN. Quota reset on 2026-08-01, but no run has
-happened: sandboxed sessions cannot reach `api.mem0.ai` (403 at CONNECT), and
-a credential alone does not fix that — see CLAUDE.md, Environment notes. No
-finding is claimed here and none should be quoted from this file. This is an
-open investigation.
+STATUS. Arms (a)-(c) have RUN once — 2026-08-03, outside this environment,
+results `readd_after_delete_1785797173.json`. All three came back
+RE_ADD_VISIBLE. Arms (d)-(e) have NOT run: they were written after that run,
+and sandboxed sessions cannot reach `api.mem0.ai` (403 at CONNECT), which a
+credential alone does not fix — see CLAUDE.md, Environment notes.
+
+**The clean (a)-(c) sweep is not a clean bill of health.** It rules out
+content-level dedup and same-scope delete reaping, and leaves three
+behaviours indistinguishable: healthy, permanent cross-scope suppression, and
+transient cross-scope suppression. The last two are exactly what (d)-(e)
+exist to separate. No finding is claimed here and none should be quoted from
+this file. See HANDOFF.md.
 
 Background. A full 15 x 2 run aborted on `012-rescope-then-readd`, where the
 runner deletes a key from one scope and immediately writes the *same value*
