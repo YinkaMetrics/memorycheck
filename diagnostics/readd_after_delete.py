@@ -14,6 +14,15 @@ transient cross-scope suppression. The last two are exactly what (d)-(e)
 exist to separate. No finding is claimed here and none should be quoted from
 this file. See HANDOFF.md.
 
+STANDING CAVEAT — WHAT NO ARM CAN SHOW. Every arm here runs against an
+isolated, freshly-scoped, otherwise-idle system: a handful of operations
+against brand-new `user_id`s with no accumulated state. The original `012`
+abort happened ~120 operations into a full run, against scopes carrying the
+backlog of everything before them. If the mechanism is load-, backlog- or
+sequence-dependent, **no arm in this file will reproduce it**, and a clean
+sweep across ALL FIVE arms still would not close the question. Only a full
+15 x 2 run recreates the original conditions.
+
 Background. A full 15 x 2 run aborted on `012-rescope-then-readd`, where the
 runner deletes a key from one scope and immediately writes the *same value*
 into another. The write was acknowledged and then not retrievable for 30s.
