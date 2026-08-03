@@ -94,6 +94,21 @@ after every change.
 
 ## Handoff protocol
 
+**Start every session by reconciling the log against the repo.** Before doing
+anything else — before reading the roadmap, before touching code — run:
+
+```bash
+git log --oneline -5
+git status
+```
+
+and compare them against the last `HANDOFF.md` entry. They must agree: the
+commits the entry claims are the commits that exist, and the tree is clean.
+**If they disagree, say so before proceeding** — an uncommitted change, a
+commit the log does not mention, or an entry citing a commit that is not there
+all mean the previous session ended in an unknown state, and the first task is
+establishing what actually happened, not continuing on top of it.
+
 After completing any task, update `HANDOFF.md` in the repo root **before the
 final commit**. Append a dated entry containing:
 
@@ -104,6 +119,13 @@ final commit**. Append a dated entry containing:
 4. **FOR STRATEGY** — open questions needing founder/advisor input. Flag them
    explicitly; do not silently resolve a question that is not yours to close.
 5. **Next** — the next task per the roadmap.
+
+**A task is not complete until its `HANDOFF.md` entry is written, committed,
+and _pushed to origin_.** All three, in that order. Work sitting in a local
+commit is invisible to review and indistinguishable from work never done — so
+"done" means pushed, and a session that cannot push has not finished its task
+and must say which step it stopped at. Blocked work still gets an entry: the
+blocker, what was established anyway, and what remains unverified.
 
 Entries stay factual and terse. **`HANDOFF.md` is public**: never include
 customer names, prospect details, credentials, account identifiers, or

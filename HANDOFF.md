@@ -1895,3 +1895,43 @@ External launch remains **HELD**. Nothing about the 012 mechanism, the regen,
 or #6017 should be repeated externally on the strength of this entry.
 
 ---
+## 2026-08-03 — Handoff protocol amended (founder instruction)
+
+### 1. What shipped
+
+`CLAUDE.md` → Handoff protocol, two additions. Docs only; no code touched.
+
+1. **Session start is now a reconciliation step.** Every session begins with
+   `git log --oneline -5` and `git status`, compared against the last
+   `HANDOFF.md` entry, before anything else. Disagreement — a dirty tree, an
+   unmentioned commit, or an entry citing a commit that does not exist — must
+   be reported before proceeding rather than built on top of.
+2. **"Complete" now means pushed.** A task is not done until its `HANDOFF.md`
+   entry is written, committed, *and pushed to origin*. A session that cannot
+   push has not finished, and must say which of the three steps it stopped at.
+   Blocked work still gets an entry.
+
+### 2. Findings
+
+None — no run, no measurement.
+
+### 3. Decisions
+
+- **Blocked work still gets an entry**, stating the blocker, what was
+  established anyway, and what remains unverified. Written into the rule
+  rather than left to judgement, because the failure mode this closes is a
+  session ending with nothing visible to review.
+
+### 4. FOR STRATEGY
+
+Nothing new. The open questions from the entry above stand unchanged: where to
+run the regen, whether to pin `mem0ai` 2.0.14 for a like-for-like
+reproduction, whether the extras should be exact pins, whether an open and
+contested #6017 changes the publication plan, and when to fix the `get_all`
+pagination limitation.
+
+### 5. Next
+
+Unchanged from the entry above. External launch remains **HELD**.
+
+---
