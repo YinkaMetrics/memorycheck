@@ -2066,3 +2066,122 @@ Unchanged. Mem0 work is blocked on an environment with a credential *and*
 egress to `api.mem0.ai`. External launch remains **HELD**.
 
 ---
+## 2026-08-03 — Arms (d)/(e) added: the 012 condition was never actually tested
+
+### 1. What shipped
+
+`diagnostics/readd_after_delete.py` gains two cross-scope arms. **Neither run
+requested this session was executed** — see Findings. Nothing published, no
+public text touched, no SEARCH unit spent.
+
+| Arm | Procedure | Isolates |
+|---|---|---|
+| (d) `d_cross_scope_identical` | delete key from scope A, poll until A reads empty, immediately write the SAME text to scope B (different `user_id`, same `app_id`) | the scope crossing itself |
+| (e) `e_cross_scope_settle` | as (d), with a 60s settle before the write to B | propagation timing vs. the crossing |
+
+The "how to read this" guide was extended **before** any run, per the standing
+practice that the interpretation is fixed in advance so it cannot be fitted to
+whatever comes back.
+
+### 2. Findings
+
+**Both runs are blocked. Egress is still refused.** A Mem0 credential is now
+present in the session (`~/.mem0/config.json`), but `api.mem0.ai` remains
+blocked:
+
+```
+curl https://api.mem0.ai/v1/ping/  ->  CONNECT tunnel failed, response 403
+proxy recentRelayFailures         ->  connect_rejected api.mem0.ai:443
+```
+
+This is the case `CLAUDE.md` → Environment notes describes: the credential
+alone does not help, because the connection never reaches Mem0. Arms (a)-(e)
+and the 15 × 2 regen all still require an environment with egress.
+
+**Arms (a)-(c) test same-scope only, and therefore never tested `012`.** All
+three delete and re-add under a single `user_id`. `012-rescope-then-readd`
+deletes from one scope and writes the same value to a *different* one —
+`delete(ivor, handover-note)` then `write(jonas, handover-note, <same text>)`.
+The leading hypothesis recorded on 2026-07-27 already said "into a **different
+scope**"; the experiment built to test it did not cross a scope boundary. That
+is a design defect in the diagnostic, ours, and it is now fixed.
+
+**Quantified offline, spending nothing.** Driving the real `Arm` class against
+five fake providers of known behaviour:
+
+| Simulated behaviour | (a) | (b) | (c) | (d) | (e) |
+|---|---|---|---|---|---|
+| healthy | visible | visible | visible | visible | visible |
+| content dedup, app-wide | **LOST** | visible | **LOST** | **LOST** | **LOST** |
+| delete reaping, same-scope | **LOST** | visible | visible | visible | visible |
+| cross-scope suppression, permanent | visible | visible | visible | **LOST** | **LOST** |
+| cross-scope suppression, transient | visible | visible | visible | **LOST** | visible |
+
+**Using only (a)-(c), three behaviours are indistinguishable: `healthy`,
+`cross-scope permanent`, and `cross-scope transient`.** All three give
+`visible / visible / visible`. So a clean sweep of the original three arms
+would have been consistent with a *permanent cross-scope suppression* — a
+delete in one tenant's scope silently swallowing a write to another's — while
+reading exactly like a clean bill of health. That is the sharpest form of the
+finding, and the instrument could not see it.
+
+**On the word "refuted", precisely.** The only refutation recorded in this log
+is at Task 3e: *"the primary hypothesis is refuted — it was not quota"*. That
+one was sound and remains so; it was evidenced by a convergence-timeout error
+rather than a rate-limit, with quota still available and ~83 of ~106 units
+consumed. **Arms (a)-(c) have never been executed**, so no reading — too
+strong or otherwise — was ever actually drawn from them. What did exist was a
+branch in the script's own interpretation guide reading "(a) succeeded -> the
+abort did not reproduce in isolation", with no mention that the cross-scope
+condition was untested. Had the arms been run and come back clean, that branch
+was the route to an unearned "012 refuted". It has been rewritten to say
+"not reproduced SAME-SCOPE" and to require reading (d)/(e) first.
+
+**Cost.** Worst case is now ~158 units for all five arms (~29 each for (c),
+(d), (e); ~51 for (a); ~9 for (b); ~11 probes). Note the worst case is the
+*failing* case — an arm whose re-add never lands polls to `CONFIRM_TIMEOUT`.
+If (d) and (e) both behave they cost ~15 together, as expected; if (d)
+reproduces the abort it costs ~29 on its own. Budget for the failing case.
+Each arm now prints its own expected cost before it runs.
+
+**Deviation from the instruction, stated.** The brief specified `delete_all`
+on scope A. Implemented instead as the same **per-key** delete the adapter
+performs (fetch scope, filter on metadata key, delete by id), because that is
+what `012` actually does and what arms (a)-(c) do. Using `delete_all` would
+have changed the delete mechanism *and* the scope at once, leaving (d)
+uninterpretable against the (a) baseline. Say if you want it the other way.
+
+### 3. Decisions
+
+- **Interpretation fixed before running**, including the branch for (d)
+  succeeding, which explicitly forbids reading that as "the original failure
+  was spurious".
+- **A cross-scope failure is flagged as gated-tier in advance.** If (d) fails
+  where (a) succeeds, that is a coupling across scopes in a store sold on
+  tenant isolation. The script says so and says it needs a founder ruling
+  before it goes anywhere.
+- **The `Arm` class keeps one delete mechanism across all five arms**, so the
+  only variable that moves between (a) and (d) is the scope boundary.
+
+### 4. FOR STRATEGY
+
+- **An environment with egress is now the single blocker for all Mem0 work.**
+  The credential is in place; the network is not. Everything else is staged
+  and push-button.
+- Unchanged: whether to pin `mem0ai` 2.0.14 for the regen, whether the extras
+  should be exact pins, whether an open and contested #6017 changes the
+  publication plan, and when to fix the `get_all` pagination limitation.
+- Reminder that **the regen and any provenance edit are gated tier** and come
+  to the founder labelled `needs-founder-review`, whichever way the run goes.
+
+### 5. Next
+
+1. Get to an environment with egress to `api.mem0.ai`.
+2. Run the five arms, twice, before reading anything into them.
+3. Full 15 × 2 regen on current `main` (~106 units), which doubles as the
+   reproduction test: completing clean and aborting at 012 are both
+   informative, and neither licenses editing published text without a ruling.
+
+External launch remains **HELD**.
+
+---
