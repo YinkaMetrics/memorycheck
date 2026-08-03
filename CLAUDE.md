@@ -152,11 +152,35 @@ stops short has not finished its task and must say which of the four steps it
 stopped at. Blocked work still gets an entry: the blocker, what was
 established anyway, and what remains unverified.
 
-This does **not** repeal invariant 9. A change that would flip a provider FAIL
-to PASS still needs founder sign-off *before* merge — for those, "complete"
-waits on the ruling, and the branch sitting unmerged is the correct state, not
-an unfinished task. Say so in the entry rather than merging to satisfy this
-rule.
+### Merge authority (ruling 2026-08-03)
+
+Two tiers. Which tier a PR is in depends on **what it touches**, not on how
+large it is.
+
+**Self-merge — no gate.** Source code, tests, and internal docs: `src/`,
+`tests/`, `CLAUDE.md`, `HANDOFF.md`, `ADAPTER_PREFLIGHT.md`, `diagnostics/`,
+`examples/shim/*`. Land these; do not wait on anyone.
+
+**Founder approval required before merge, whatever the PR size:**
+
+- `README.md`
+- `examples/report_*.md` / `examples/report_*.json` (published evidence)
+- any change to a published figure, claim, or provider framing
+- clearing `unverified` on any adapter
+- anything that would flip a provider FAIL to PASS (invariant 9, unchanged)
+
+Mechanism: label the PR **`needs-founder-review`**, state in the body
+**exactly which public claim changes and why**, and **do not merge until the
+founder comments approval**. Record that approval in the `HANDOFF.md` entry.
+For these PRs the completion rule above pauses at "pushed": an unmerged branch
+awaiting a ruling is the **correct** state, not an unfinished task, and the
+entry should say so rather than merging to satisfy the rule.
+
+Be honest about what this is: **it is not independent review** — the founder
+is the only human here, and a gate with one participant cannot catch what that
+participant misses. It is a deliberate look before anything public changes.
+Two near-misses on published claims justify that friction; nothing in the
+internal tier does, which is why the internal tier has no gate at all.
 
 Entries stay factual and terse. **`HANDOFF.md` is public**: never include
 customer names, prospect details, credentials, account identifiers, or

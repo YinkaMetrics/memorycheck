@@ -1996,3 +1996,73 @@ Unchanged. The Mem0 work is still blocked on an environment with a credential
 *and* egress to `api.mem0.ai`. External launch remains **HELD**.
 
 ---
+## 2026-08-03 — Ruling: tiered merge authority
+
+### 1. What shipped
+
+`CLAUDE.md` → Handoff protocol → new **"Merge authority (ruling 2026-08-03)"**
+subsection. Docs only. This closes the FOR STRATEGY question "who merges?"
+raised in the entry above; it is the founder's ruling, not an implementer
+decision.
+
+**Self-merge, no gate:** `src/`, `tests/`, `CLAUDE.md`, `HANDOFF.md`,
+`ADAPTER_PREFLIGHT.md`, `diagnostics/`, `examples/shim/*`.
+
+**Founder approval before merge, whatever the PR size:** `README.md`,
+`examples/report_*.{md,json}`, any change to a published figure, claim or
+provider framing, clearing `unverified` on any adapter, and anything that
+would flip a provider FAIL to PASS (invariant 9, unchanged).
+
+Mechanism: label `needs-founder-review`, state in the PR body exactly which
+public claim changes and why, do not merge until the founder comments
+approval, and record that approval in the `HANDOFF.md` entry.
+
+The tier is decided by **what a PR touches, not how large it is** — a
+one-word change to a README figure is in the gated tier; a 400-line adapter
+refactor is not.
+
+### 2. Findings
+
+None — no run, no measurement.
+
+**Operational note:** the `needs-founder-review` label does not yet exist in
+the repository, and the GitHub tooling available to these sessions has no
+label-creation call. GitHub creates a label automatically the first time it is
+applied to a PR, so the mechanism works from first use — it will just appear
+with a default colour. Worth setting a colour by hand if it should stand out.
+
+### 3. Decisions
+
+- **The provisional invariant 9 carve-out added in the previous entry is
+  superseded** by this ruling and was replaced, not merely appended to. The
+  ruling keeps invariant 9 unchanged and generalises it: invariant 9 is now
+  one of five triggers for the gated tier rather than the only one.
+- **The completion rule now has an explicit pause point.** For gated-tier PRs
+  "complete" stops at *pushed* and waits for the ruling; an unmerged branch
+  awaiting founder approval is the correct state, not an unfinished task, and
+  the entry must say so rather than merging to satisfy the completion rule.
+- **`CLAUDE.md` states plainly that this is not independent review.** The
+  founder is the only human, and a gate with one participant cannot catch what
+  that participant misses. Recording the limitation rather than letting the
+  word "review" imply more assurance than the process provides — the same
+  standard the product applies to its own evidence.
+- **This entry's own PR is internal tier and was self-merged**, per the ruling
+  it records.
+
+### 4. FOR STRATEGY
+
+Nothing new. The remaining open items are unchanged: where to run the regen,
+whether to pin `mem0ai` 2.0.14 for a like-for-like reproduction, whether the
+extras should be exact pins, whether an open and contested #6017 changes the
+publication plan, and when to fix the `get_all` pagination limitation.
+
+Note that **every remaining Mem0 item lands in the gated tier**: the regen
+refreshes published figures, and the provenance edit changes a public claim.
+Those will need the label and a ruling, not a self-merge.
+
+### 5. Next
+
+Unchanged. Mem0 work is blocked on an environment with a credential *and*
+egress to `api.mem0.ai`. External launch remains **HELD**.
+
+---
