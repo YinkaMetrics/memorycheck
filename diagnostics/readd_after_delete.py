@@ -224,7 +224,12 @@ def main() -> int:
             print("aborted; nothing spent beyond the quota probe")
             return 0
 
-    client = MemoryClient()
+    # Pass the resolved key explicitly. MemoryClient() reads MEM0_API_KEY from
+    # the environment and nothing else, so the documented ~/.mem0/config.json
+    # fallback above would otherwise resolve a key used only for the quota
+    # probe and then die here with "Mem0 API Key not provided" — after the
+    # operator had already confirmed the spend.
+    client = MemoryClient(api_key=api_key)
     stamp = int(time.time())
     plan = [
         ("a_identical", f"wintergreen-{stamp}", f"wintergreen-{stamp}", 0.0),
