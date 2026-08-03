@@ -2085,9 +2085,10 @@ whatever comes back.
 
 ### 2. Findings
 
-**Both runs are blocked. Egress is still refused.** A Mem0 credential is now
-present in the session (`~/.mem0/config.json`), but `api.mem0.ai` remains
-blocked:
+**Both runs are blocked. Egress is still refused.** ~~A Mem0 credential is now
+present in the session (`~/.mem0/config.json`)~~ — **CORRECTED 2026-08-03: this
+was wrong, there is no credential here; see the correction entry below** — and
+`api.mem0.ai` remains blocked:
 
 ```
 curl https://api.mem0.ai/v1/ping/  ->  CONNECT tunnel failed, response 403
@@ -2166,7 +2167,9 @@ uninterpretable against the (a) baseline. Say if you want it the other way.
 ### 4. FOR STRATEGY
 
 - **An environment with egress is now the single blocker for all Mem0 work.**
-  The credential is in place; the network is not. Everything else is staged
+  ~~The credential is in place; the network is not.~~ **CORRECTED
+  2026-08-03: neither is in place — see the correction entry below.**
+  Everything else is staged
   and push-button.
 - Unchanged: whether to pin `mem0ai` 2.0.14 for the regen, whether the extras
   should be exact pins, whether an open and contested #6017 changes the
@@ -2426,6 +2429,136 @@ establish.
 3. Second stability run of (a)-(c) (~15 units), deferred but owed.
 4. Founder ruling before any of it touches published text — the regen and any
    provenance edit are gated tier.
+
+External launch remains **HELD**.
+
+---
+## 2026-08-03 — Falsified abort message replaced; arms (f)/(g); credential claim corrected
+
+### 1. What shipped
+
+Three things, all internal tier.
+
+| Change | File |
+|---|---|
+| Abort message: falsified trigger replaced with the evidenced one | `adapters/mem0.py` |
+| Arms (f)/(g): the `delete_all` namespace condition | `diagnostics/readd_after_delete.py` |
+| Credential claim corrected in two prior entries | `HANDOFF.md` |
+
+### 2. Findings
+
+**The abort message was asserting a falsified mechanism.** `write()` said:
+
+> Known trigger: re-adding text identical to a value deleted moments earlier
+> (see HANDOFF, scenario 012)
+
+Three things now contradict that. The **2026-08-03 abort fired at
+`003-scope-boundaries`, op #26** — reported, not observed here — with no
+re-add of deleted text anywhere near it. `003` does not delete at all. And
+arms (a)-(e) were built to test exactly that mechanism. Replaced with the
+evidenced trigger: **a write issued after a `delete_all`, even when the
+namespace was polled until it read empty**, citing `reset()`'s own measurement
+of **6/14 writes lost following a delete_all versus 0/10 with no preceding
+delete**. That measurement was in the codebase the whole time, one method
+above the message that ignored it.
+
+This mattered beyond tidiness: the message is what an operator reads at the
+moment a run dies, and it was pointing them at a mechanism five arms had
+already excluded.
+
+**Arms (f)/(g) — and why (a)-(e) were the wrong instrument.** Every arm so far
+uses a **per-key** delete (fetch scope, filter on metadata key, delete by id).
+`reset()` does something categorically different: one
+`delete_all(app_id=...)` wiping the whole namespace across every scope, then a
+poll until empty, then return — after which the runner immediately writes.
+
+That per-key substitution was **my call**, made when (d)/(e) were added: the
+brief said `delete_all` and I used per-key to keep the delete mechanism fixed
+across arms for comparability. Comparability was preserved and the mechanism
+under investigation was not tested. It is a plausible reason all five passed.
+
+- **(f)** seeds `_RESIDUE_N`=5 values so the namespace holds real residue,
+  calls the same `delete_all(app_id=...)`, polls until the namespace reads
+  empty, then writes and polls for retrievability.
+- **(g)** identical, plus a 60s settle after the namespace reads empty.
+
+Together they separate *"reads empty means propagated"* from *"reads empty but
+still reaping"*.
+
+**A design flaw in (f)/(g), caught by simulation before any spend.** The first
+draft opened with a cleanup `delete_all` before seeding. Under the very
+hypothesis being tested, that opening call would swallow the seed writes and
+the arm would die in setup having measured nothing — the simulation returned
+`SETUP_FAILED` for both reaping behaviours. Fixed by giving each namespace arm
+a **fresh `app_id`**, so the namespace is empty by construction and the arm
+contains exactly one `delete_all`: the one under test.
+
+Validated offline against three known `delete_all` behaviours, spending
+nothing:
+
+| delete_all behaviour | (f) no settle | (g) 60s settle |
+|---|---|---|
+| clean | WRITE_VISIBLE | WRITE_VISIBLE |
+| reaps, transient | **WRITE_LOST** | WRITE_VISIBLE |
+| reaps, persistent | **WRITE_LOST** | **WRITE_LOST** |
+
+In every simulated case the namespace **read empty before the write**, which
+is the whole point: emptiness is what `reset()` currently trusts.
+
+**Reading stated in advance.** If (f) fails and (g) passes, polling a
+namespace until empty is not sufficient — and since that is precisely what
+`reset()` does before returning, **every run is exposed**, with the first
+writes after any reset liable to be reaped. That would be a harness-side
+defect as much as a provider behaviour, and the fix is a settle sized from the
+measured empty-to-safe gap, not a fixed sleep.
+
+**Cost.** All seven arms now ~228 units worst case; (f)+(g) are ~66 of that,
+~10-12 if they pass. Worst case remains the failing case.
+
+**Credential claim corrected.** Two prior entries state a Mem0 credential is
+present in this environment. **It is not.** `~/.mem0/config.json` is 57 bytes
+containing a single `user_id` field — the Mem0 CLI's local identity file, not
+an API key. There is no `platform.api_key`, so the script's `resolve_api_key()`
+returns `None` from it, and `MEM0_API_KEY` is unset. I inferred the credential
+from the file existing and never opened it. Both entries are struck through in
+place and point here.
+
+So **both** blockers are live, not one: no key, and no egress
+(`connect_rejected api.mem0.ai:443`, re-verified). Either alone is sufficient
+to stop every Mem0 run from this environment.
+
+### 3. Decisions
+
+- **Per-key delete is not substituted in (f)/(g).** Explicit instruction, and
+  correct: the substitution is what made the earlier arms miss.
+- **Fresh `app_id` per namespace arm**, so the arm holds exactly one
+  `delete_all`. Adopted after the simulation showed the alternative aborts in
+  setup under the hypothesis being tested.
+- **The struck-through claims were left visible** rather than deleted. The
+  entries are merged and public; silently rewriting them would hide that the
+  log was wrong for several hours.
+
+### 4. FOR STRATEGY
+
+- **The `003` abort is a stronger data point than anything the arms have
+  produced, and it is second-hand here.** Worth promoting properly: the
+  results filename, the full latency curve from the new instrumentation, and
+  whether it was the regen or a shorter run. Per the promotion rule, an
+  unlogged run is invisible to the next session — right now this one is a
+  single sentence.
+- If (f)/(g) implicate `reset()`, the fix lands in `adapters/mem0.py` and
+  **could flip provider findings**, so it is gated tier and needs a ruling
+  before merge.
+- Unchanged: pinning `mem0ai` 2.0.14 for the regen, exact pins for extras,
+  whether #6017 changes the publication plan, and the `get_all` pagination
+  limitation.
+
+### 5. Next
+
+1. Run (f)/(g) on the Mac — the leading hypothesis, ~66 units worst case.
+2. Promote the `003` abort properly, with its curve and results filename.
+3. Full 15 × 2 regen, capturing stderr for the latency curve.
+4. Founder ruling before any of it touches published text.
 
 External launch remains **HELD**.
 

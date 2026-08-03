@@ -61,10 +61,34 @@ they were built to test it and do not. That gap is why (d) and (e) exist.
   (e) as (d), but WAIT an additional 60s before writing to B
       Separates propagation timing from the cross-scope factor itself.
 
-Read the arms together and across the pair boundary. (a) alone says nothing;
-the informative comparisons are (a) vs (b), (a) vs (c), (a) vs (d), and
-(d) vs (e). In particular a clean sweep of (a)-(c) does **not** license
-"012 refuted" — it licenses only "not reproduced same-scope".
+NAMESPACE ARMS (f)-(g). **The leading hypothesis, and the only arms that use
+the delete the harness actually performs.**
+
+Arms (a)-(e) all use a PER-KEY delete: fetch the scope, filter on the metadata
+key, delete by id. `reset()` does something different — a single
+`delete_all(app_id=...)` that wipes the whole namespace across every scope.
+The 2026-08-03 abort at `003-scope-boundaries` (op #26) followed a `reset()`,
+with no re-add of deleted text anywhere near it, which per-key arms cannot
+model. Substituting per-key for delete_all is very likely why (a)-(e) passed.
+
+  (f) write N values so the namespace holds real residue, call the SAME
+      `delete_all(app_id=...)` that `reset()` calls, poll until the namespace
+      reads empty, then write and poll for retrievability
+      The evidenced condition. `reset()`'s own docstring records 6/14 writes
+      lost after a delete_all versus 0/10 without one.
+
+  (g) as (f), but WAIT an additional 60s after the namespace reads empty
+      Separates "reads empty means propagated" from "reads empty but the
+      delete is still reaping". If (f) fails and (g) passes, then polling a
+      namespace until empty — which is exactly what `reset()` does before
+      returning — is NOT sufficient, and every run is exposed.
+
+Read the arms together and across the pair boundaries. (a) alone says nothing;
+the informative comparisons are (a) vs (b), (a) vs (c), (a) vs (d), (d) vs (e),
+and — now the important one — (a)-(e) vs (f)/(g), which is per-key delete
+versus namespace delete_all. In particular a clean sweep of (a)-(c) does
+**not** license "012 refuted" — it licenses only "not reproduced same-scope,
+with a per-key delete".
 
     python diagnostics/readd_after_delete.py             # prints cost, then asks
     python diagnostics/readd_after_delete.py --yes       # no prompt
@@ -100,6 +124,11 @@ EXTRA_SETTLE = 60.0     # arm (c): wait this long AFTER the delete reads empty
 APP_ID = "mc_diag_readd"
 KEY = "handover-note"
 
+# How many values (f)/(g) seed before wiping, so the namespace holds real
+# residue rather than a single row. A delete_all over one memory is not the
+# condition a run hits — `reset()` fires when a namespace has accumulated.
+_RESIDUE_N = 5
+
 # Worst-case SEARCH reads per arm: 1 pre-read + write-confirm polls
 # + 1 delete lookup + delete-confirm polls + re-add-confirm polls.
 #
@@ -115,6 +144,9 @@ COST_ESTIMATE = {
     "c_settle_then_identical": 2 + 2 + 1 + _MAX_POLLS,
     "d_cross_scope_identical": 2 + 2 + 1 + _MAX_POLLS,
     "e_cross_scope_settle": 2 + 2 + 1 + _MAX_POLLS,
+    # (f)/(g) seed N values, so add N confirm reads to the usual shape.
+    "f_namespace_delete_all": 2 + _RESIDUE_N + 2 + _MAX_POLLS,
+    "g_namespace_settle": 2 + _RESIDUE_N + 2 + _MAX_POLLS,
 }
 
 
@@ -149,8 +181,14 @@ def quota_remaining(api_key: str) -> int | None:
 
 class Arm:
     def __init__(self, client, name: str, user_id: str,
-                 target_user_id: str | None = None):
+                 target_user_id: str | None = None, app_id: str = APP_ID):
         self.c, self.name, self.uid = client, name, user_id
+        # Per-arm namespace for (f)/(g): a fresh `app_id` starts empty by
+        # construction, so the arm contains exactly ONE delete_all — the one
+        # under test. An opening cleanup delete_all would, under the very
+        # hypothesis being tested, swallow the seed writes and abort the arm
+        # in setup before it measured anything.
+        self.app_id = app_id
         # Where the re-add goes. Same scope for (a)-(c); a different `user_id`
         # under the same `app_id` for the cross-scope arms (d)-(e), which is
         # what the 012 rescope actually does.
@@ -181,7 +219,7 @@ class Arm:
             time.sleep(POLL_INTERVAL)
 
     def _add(self, value: str, uid: str | None = None) -> None:
-        self.c.add(f"{KEY}: {value}", user_id=uid or self.uid, app_id=APP_ID,
+        self.c.add(f"{KEY}: {value}", user_id=uid or self.uid, app_id=self.app_id,
                    metadata={"key": KEY}, infer=False)
 
     def _delete_key(self) -> int:
@@ -243,11 +281,73 @@ class Arm:
                        if landed else
                        f"re-added value NOT retrievable {where} within "
                        f"{CONFIRM_TIMEOUT:.0f}s").replace("  ", " "),
+            "delete_mechanism": "per-key delete by id",
             "cross_scope": self.cross_scope,
             "delete_observed_empty_after_s": round(empty_after),
             "extra_settle_s": extra_settle,
             "reads": self.reads,
         }
+
+    def run_namespace(self, values: list[str], probe: str,
+                      extra_settle: float) -> dict:
+        """Arms (f)/(g): the `reset()` condition, reproduced exactly.
+
+        Deliberately NOT the per-key delete used by (a)-(e). `reset()` issues
+        `delete_all(app_id=...)` — one call wiping the namespace across every
+        scope — then polls the namespace until it reads empty and returns,
+        after which the runner immediately writes. That sequence is what this
+        reproduces, including the emptiness poll, because the open question is
+        whether reading empty actually means the delete has propagated.
+        """
+        # No opening cleanup: this arm uses a fresh `app_id`, so the namespace
+        # is empty already and the delete_all below is the only one in the arm.
+        # Seed real residue across a couple of scopes, as a live namespace has.
+        for i, value in enumerate(values):
+            self._add(value, f"{self.uid}__s{i % 2}")
+        seeded, _ = self._wait_until(
+            lambda: len(self._namespace_rows()) >= len(values), CONFIRM_TIMEOUT)
+        if not seeded:
+            return {"arm": self.name, "outcome": "SETUP_FAILED",
+                    "detail": f"only {len(self._namespace_rows())} of "
+                              f"{len(values)} seed writes became retrievable",
+                    "reads": self.reads}
+
+        # The call reset() makes, verbatim.
+        self.c.delete_all(app_id=self.app_id)
+        emptied, empty_after = self._wait_until(
+            lambda: not self._namespace_rows(), CONFIRM_TIMEOUT)
+        if not emptied:
+            return {"arm": self.name, "outcome": "NAMESPACE_NEVER_EMPTIED",
+                    "detail": f"namespace still non-empty {CONFIRM_TIMEOUT}s "
+                              "after delete_all", "reads": self.reads}
+
+        if extra_settle:
+            time.sleep(extra_settle)
+
+        target = f"{self.uid}__s0"
+        self._add(probe, target)
+        landed, took = self._wait_until(
+            lambda: self._visible(probe, target), CONFIRM_TIMEOUT)
+        self.c.delete_all(app_id=self.app_id)
+
+        return {
+            "arm": self.name,
+            "outcome": "WRITE_VISIBLE" if landed else "WRITE_LOST",
+            "detail": (f"post-reset write retrievable after {took:.0f}s"
+                       if landed else
+                       f"post-reset write NOT retrievable within "
+                       f"{CONFIRM_TIMEOUT:.0f}s"),
+            "delete_mechanism": "delete_all(app_id) — as reset()",
+            "residue_seeded": len(values),
+            "namespace_read_empty_after_s": round(empty_after),
+            "extra_settle_s": extra_settle,
+            "reads": self.reads,
+        }
+
+    def _namespace_rows(self) -> list[dict]:
+        self.reads += 1
+        resp = self.c.get_all(filters={"app_id": self.app_id})
+        return resp.get("results", []) if isinstance(resp, dict) else (resp or [])
 
 
 def main() -> int:
@@ -312,6 +412,11 @@ def main() -> int:
         ("e_cross_scope_settle", f"saltmarsh-{stamp}", f"saltmarsh-{stamp}",
          EXTRA_SETTLE, True),
     ]
+    # (name, extra settle) — namespace arms, run via run_namespace().
+    namespace_plan = [
+        ("f_namespace_delete_all", 0.0),
+        ("g_namespace_settle", EXTRA_SETTLE),
+    ]
 
     results = []
     for name, first, second, settle, cross in plan:
@@ -321,6 +426,22 @@ def main() -> int:
         source = f"mc_diag__{name}_{stamp}"
         target = f"mc_diag__{name}_{stamp}__scope_b" if cross else None
         result = Arm(client, name, source, target).run(first, second, settle)
+        after = quota_remaining(api_key)
+        if before is not None and after is not None and before >= 0 and after >= 0:
+            result["search_units_spent"] = before - after
+        results.append(result)
+        for k, v in result.items():
+            print(f"  {k}: {v}")
+
+    for name, settle in namespace_plan:
+        print(f"\n--- arm {name} (namespace delete_all — the reset() condition) ---")
+        print(f"    expected SEARCH cost, worst case: ~{COST_ESTIMATE[name]} units")
+        before = quota_remaining(api_key)
+        arm = Arm(client, name, f"mc_diag__{name}_{stamp}",
+                  app_id=f"{APP_ID}_{name}_{stamp}")
+        result = arm.run_namespace(
+            [f"residue-{i}-{stamp}" for i in range(_RESIDUE_N)],
+            f"probe-{name}-{stamp}", settle)
         after = quota_remaining(api_key)
         if before is not None and after is not None and before >= 0 and after >= 0:
             result["search_units_spent"] = before - after
@@ -380,6 +501,35 @@ def main() -> int:
               "  cross-scope condition, in isolation. That points at load- or\n"
               "  sequence-dependence, which only the full 15 x 2 regen can settle.\n"
               "  Do NOT read this as 'the original failure was spurious'.")
+    else:
+        print("  Pattern not anticipated. Record the outcomes and reason from them.")
+
+    f, g = by.get("f_namespace_delete_all"), by.get("g_namespace_settle")
+    W_LOST, W_OK = "WRITE_LOST", "WRITE_VISIBLE"
+    print("\n  NAMESPACE (f)-(g) — the reset() condition, and the leading "
+          "hypothesis:")
+    if f == W_LOST and g == W_OK:
+        print("  (f) failed, (g) succeeded -> POLLING A NAMESPACE UNTIL EMPTY IS\n"
+              "  NOT SUFFICIENT. reset() does exactly that and then returns, so\n"
+              "  every run is exposed: the first writes after any reset can be\n"
+              "  reaped by a delete_all that has stopped being visible. This is\n"
+              "  a harness-side defect as much as a provider behaviour — the fix\n"
+              "  is a settle after reset, sized from the measured empty-to-safe\n"
+              "  gap, not a fixed sleep. Founder ruling before publication.")
+    elif f == W_LOST and g == W_LOST:
+        print("  (f) and (g) both failed -> waiting does not clear it either. A\n"
+              "  delete_all suppresses subsequent writes to the namespace for\n"
+              "  longer than 60s, or until something other than time changes.\n"
+              "  The most serious form, and it would make delete_all unusable as\n"
+              "  a reset primitive.")
+    elif f == W_OK and all(x == "RE_ADD_VISIBLE" for x in (a, b, c, d, e) if x):
+        print("  (f) succeeded and every other arm passed -> no isolated arm\n"
+              "  reproduces the abort. Combined with the standing caveat, that\n"
+              "  points hard at load/backlog dependence, which only a full run\n"
+              "  can exhibit. Do NOT read it as 'nothing is wrong'.")
+    elif f == W_OK:
+        print("  (f) succeeded -> the reset() condition does not reproduce in\n"
+              "  isolation. Read it against the per-key arms before concluding.")
     else:
         print("  Pattern not anticipated. Record the outcomes and reason from them.")
 
