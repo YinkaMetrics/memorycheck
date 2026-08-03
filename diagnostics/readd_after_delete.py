@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Discriminating experiment: why is a re-added value not retrievable?
 
-STATUS: written, NOT YET RUN. It requires live Mem0 calls and the account's
-SEARCH quota is exhausted until 2026-08-01. No finding is claimed here and
-none should be quoted from this file. This is an open investigation.
+STATUS: written, NOT YET RUN. Quota reset on 2026-08-01, but no run has
+happened: sandboxed sessions cannot reach `api.mem0.ai` (403 at CONNECT), and
+a credential alone does not fix that — see CLAUDE.md, Environment notes. No
+finding is claimed here and none should be quoted from this file. This is an
+open investigation.
 
 Background. A full 15 x 2 run aborted on `012-rescope-then-readd`, where the
 runner deletes a key from one scope and immediately writes the *same value*
@@ -11,10 +13,10 @@ into another. The write was acknowledged and then not retrievable for 30s.
 Whether that is a Mem0 behaviour or an artifact of how this harness sequences
 delete-then-write is exactly what is unresolved.
 
-Three arms, because two cannot separate the candidate mechanisms:
+SAME-SCOPE ARMS (a)-(c). All three delete and re-add under **one** `user_id`:
 
   (a) delete, then re-add IDENTICAL text
-      Baseline. Expected to reproduce the abort.
+      Baseline for the same-scope case.
 
   (b) delete, then re-add VARIED text
       Isolates content-level deduplication. If (a) fails and (b) succeeds,
@@ -22,15 +24,31 @@ Three arms, because two cannot separate the candidate mechanisms:
 
   (c) delete, poll until search reads empty, WAIT an additional 60s,
       then re-add IDENTICAL text
-      The important arm. If (a) fails and (c) succeeds, the finding is that
-      *polling until empty is insufficient* — deletion keeps reaping writes
-      after it has stopped being observable through search. That would mean
-      no amount of "confirm the delete landed" is sufficient, which is
-      sharper and more consequential than the correction finding, and hits
-      any customer doing delete-then-re-add.
+      If (a) fails and (c) succeeds, the finding is that *polling until empty
+      is insufficient* — deletion keeps reaping writes after it has stopped
+      being observable through search. That would mean no amount of "confirm
+      the delete landed" is sufficient, and hits any customer doing
+      delete-then-re-add.
 
-Read the arms together. (a) alone says nothing; the pairs (a) vs (b) and
-(a) vs (c) are what carry information.
+CROSS-SCOPE ARMS (d)-(e). **These are the actual `012` condition.**
+
+`012-rescope-then-readd` deletes a key from one scope and writes the same
+value to a *different* scope: `delete(ivor, handover-note)` then
+`write(jonas, handover-note, <same text>)`. Arms (a)-(c) never cross a scope
+boundary, so **they cannot confirm or rule out the leading hypothesis** —
+they were built to test it and do not. That gap is why (d) and (e) exist.
+
+  (d) delete the key from scope A, poll until A reads empty, then IMMEDIATELY
+      write the SAME text to scope B (different `user_id`, same `app_id`)
+      The real condition. Poll for retrievability under B.
+
+  (e) as (d), but WAIT an additional 60s before writing to B
+      Separates propagation timing from the cross-scope factor itself.
+
+Read the arms together and across the pair boundary. (a) alone says nothing;
+the informative comparisons are (a) vs (b), (a) vs (c), (a) vs (d), and
+(d) vs (e). In particular a clean sweep of (a)-(c) does **not** license
+"012 refuted" — it licenses only "not reproduced same-scope".
 
     python diagnostics/readd_after_delete.py             # prints cost, then asks
     python diagnostics/readd_after_delete.py --yes       # no prompt
@@ -68,11 +86,19 @@ KEY = "handover-note"
 
 # Worst-case SEARCH reads per arm: 1 pre-read + write-confirm polls
 # + 1 delete lookup + delete-confirm polls + re-add-confirm polls.
+#
+# These are WORST cases, and the worst case is the *failing* one: an arm whose
+# re-add never lands polls all the way to CONFIRM_TIMEOUT. A sweep where every
+# arm succeeds promptly costs far less — roughly 7-8 reads per arm. So (d)+(e)
+# together are ~15 units if they behave and ~58 if they reproduce the abort;
+# budget for the latter, and be pleasantly surprised.
 _MAX_POLLS = int(CONFIRM_TIMEOUT / POLL_INTERVAL)
 COST_ESTIMATE = {
     "a_identical": 2 + _MAX_POLLS + 1 + _MAX_POLLS,
     "b_varied": 2 + 2 + 1 + 4,
     "c_settle_then_identical": 2 + 2 + 1 + _MAX_POLLS,
+    "d_cross_scope_identical": 2 + 2 + 1 + _MAX_POLLS,
+    "e_cross_scope_settle": 2 + 2 + 1 + _MAX_POLLS,
 }
 
 
@@ -106,19 +132,28 @@ def quota_remaining(api_key: str) -> int | None:
 
 
 class Arm:
-    def __init__(self, client, name: str, user_id: str):
+    def __init__(self, client, name: str, user_id: str,
+                 target_user_id: str | None = None):
         self.c, self.name, self.uid = client, name, user_id
+        # Where the re-add goes. Same scope for (a)-(c); a different `user_id`
+        # under the same `app_id` for the cross-scope arms (d)-(e), which is
+        # what the 012 rescope actually does.
+        self.target_uid = target_user_id or user_id
         self.reads = 0
+
+    @property
+    def cross_scope(self) -> bool:
+        return self.target_uid != self.uid
 
     # -- primitives ---------------------------------------------------------
 
-    def _rows(self) -> list[dict]:
+    def _rows(self, uid: str | None = None) -> list[dict]:
         self.reads += 1
-        resp = self.c.get_all(filters={"user_id": self.uid})
+        resp = self.c.get_all(filters={"user_id": uid or self.uid})
         return resp.get("results", []) if isinstance(resp, dict) else (resp or [])
 
-    def _visible(self, value: str) -> bool:
-        return any(value in (r.get("memory") or "") for r in self._rows())
+    def _visible(self, value: str, uid: str | None = None) -> bool:
+        return any(value in (r.get("memory") or "") for r in self._rows(uid))
 
     def _wait_until(self, predicate, timeout: float) -> tuple[bool, float]:
         started = time.monotonic()
@@ -129,11 +164,20 @@ class Arm:
                 return False, time.monotonic() - started
             time.sleep(POLL_INTERVAL)
 
-    def _add(self, value: str) -> None:
-        self.c.add(f"{KEY}: {value}", user_id=self.uid, app_id=APP_ID,
+    def _add(self, value: str, uid: str | None = None) -> None:
+        self.c.add(f"{KEY}: {value}", user_id=uid or self.uid, app_id=APP_ID,
                    metadata={"key": KEY}, infer=False)
 
     def _delete_key(self) -> int:
+        """Delete this key's memories from the SOURCE scope only.
+
+        Deliberately the same per-key delete the adapter performs (fetch scope,
+        filter on metadata key, delete by id) rather than a `delete_all` on the
+        scope. That is what `012` does, and holding the delete mechanism fixed
+        keeps (d)/(e) comparable with (a)-(c) — otherwise a cross-scope arm
+        would change two variables at once and be uninterpretable against the
+        baseline.
+        """
         doomed = [r.get("id") for r in self._rows()
                   if (r.get("metadata") or {}).get("key") == KEY and r.get("id")]
         for mem_id in doomed:
@@ -144,6 +188,8 @@ class Arm:
 
     def run(self, first: str, second: str, extra_settle: float) -> dict:
         self.c.delete_all(user_id=self.uid)
+        if self.cross_scope:
+            self.c.delete_all(user_id=self.target_uid)
         time.sleep(POLL_INTERVAL)
 
         self._add(first)
@@ -164,16 +210,24 @@ class Arm:
         if extra_settle:
             time.sleep(extra_settle)
 
-        self._add(second)
-        landed, took = self._wait_until(lambda: self._visible(second), CONFIRM_TIMEOUT)
+        # The re-add goes to the target scope, which is the source scope for
+        # (a)-(c) and a different one for (d)-(e).
+        self._add(second, self.target_uid)
+        landed, took = self._wait_until(
+            lambda: self._visible(second, self.target_uid), CONFIRM_TIMEOUT)
         self.c.delete_all(user_id=self.uid)
+        if self.cross_scope:
+            self.c.delete_all(user_id=self.target_uid)
 
+        where = "in the target scope" if self.cross_scope else ""
         return {
             "arm": self.name,
             "outcome": "RE_ADD_VISIBLE" if landed else "RE_ADD_LOST",
-            "detail": (f"re-added value retrievable after {took:.0f}s"
+            "detail": (f"re-added value retrievable {where} after {took:.0f}s"
                        if landed else
-                       f"re-added value NOT retrievable within {CONFIRM_TIMEOUT:.0f}s"),
+                       f"re-added value NOT retrievable {where} within "
+                       f"{CONFIRM_TIMEOUT:.0f}s").replace("  ", " "),
+            "cross_scope": self.cross_scope,
             "delete_observed_empty_after_s": round(empty_after),
             "extra_settle_s": extra_settle,
             "reads": self.reads,
@@ -231,17 +285,26 @@ def main() -> int:
     # operator had already confirmed the spend.
     client = MemoryClient(api_key=api_key)
     stamp = int(time.time())
+    # (name, first value, second value, extra settle, cross-scope)
     plan = [
-        ("a_identical", f"wintergreen-{stamp}", f"wintergreen-{stamp}", 0.0),
-        ("b_varied", f"clearwater-{stamp}", f"riverstone-{stamp}", 0.0),
-        ("c_settle_then_identical", f"lantern-{stamp}", f"lantern-{stamp}", EXTRA_SETTLE),
+        ("a_identical", f"wintergreen-{stamp}", f"wintergreen-{stamp}", 0.0, False),
+        ("b_varied", f"clearwater-{stamp}", f"riverstone-{stamp}", 0.0, False),
+        ("c_settle_then_identical", f"lantern-{stamp}", f"lantern-{stamp}",
+         EXTRA_SETTLE, False),
+        ("d_cross_scope_identical", f"kingfisher-{stamp}", f"kingfisher-{stamp}",
+         0.0, True),
+        ("e_cross_scope_settle", f"saltmarsh-{stamp}", f"saltmarsh-{stamp}",
+         EXTRA_SETTLE, True),
     ]
 
     results = []
-    for name, first, second, settle in plan:
-        print(f"\n--- arm {name} ---")
+    for name, first, second, settle, cross in plan:
+        print(f"\n--- arm {name}{' (cross-scope)' if cross else ''} ---")
+        print(f"    expected SEARCH cost, worst case: ~{COST_ESTIMATE[name]} units")
         before = quota_remaining(api_key)
-        result = Arm(client, name, f"mc_diag__{name}_{stamp}").run(first, second, settle)
+        source = f"mc_diag__{name}_{stamp}"
+        target = f"mc_diag__{name}_{stamp}__scope_b" if cross else None
+        result = Arm(client, name, source, target).run(first, second, settle)
         after = quota_remaining(api_key)
         if before is not None and after is not None and before >= 0 and after >= 0:
             result["search_units_spent"] = before - after
@@ -257,24 +320,53 @@ def main() -> int:
     by = {r["arm"]: r["outcome"] for r in results}
     a, b, c = (by.get("a_identical"), by.get("b_varied"),
                by.get("c_settle_then_identical"))
+    d, e = by.get("d_cross_scope_identical"), by.get("e_cross_scope_settle")
+    LOST, OK = "RE_ADD_LOST", "RE_ADD_VISIBLE"
     print("\nHow to read this (stated in advance, so the reading is not fitted "
           "to whatever came back):")
-    if a == "RE_ADD_LOST" and c == "RE_ADD_VISIBLE":
+
+    print("\n  SAME-SCOPE (a)-(c):")
+    if a == LOST and c == OK:
         print("  (a) failed, (c) succeeded -> deletion keeps reaping writes after it\n"
               "  has stopped being observable through search. Confirming a delete by\n"
               "  polling until empty is therefore insufficient. Affects any caller\n"
               "  doing delete-then-re-add. Needs a founder ruling before publication.")
-    elif a == "RE_ADD_LOST" and b == "RE_ADD_VISIBLE" and c == "RE_ADD_LOST":
+    elif a == LOST and b == OK and c == LOST:
         print("  (a) and (c) failed, (b) succeeded -> tied to the content being\n"
               "  identical, and waiting does not help. Points at content-level\n"
               "  deduplication rather than delete propagation.")
-    elif a == "RE_ADD_VISIBLE":
-        print("  (a) succeeded -> the abort did not reproduce in isolation. It may\n"
-              "  depend on load or on preceding scenarios; do NOT conclude the\n"
-              "  original failure was spurious without reproducing it under a run.")
+    elif a == OK:
+        print("  (a) succeeded -> not reproduced SAME-SCOPE. This does NOT refute\n"
+              "  the 012 hypothesis: 012 is a cross-scope rescope, which (a)-(c) do\n"
+              "  not exercise at all. Read (d)/(e) before concluding anything.")
     else:
         print("  Pattern not anticipated. Record the outcomes and reason from them\n"
               "  rather than forcing one of the branches above.")
+
+    print("\n  CROSS-SCOPE (d)-(e) — the actual 012 condition:")
+    if d == LOST and a == OK:
+        print("  (d) failed where (a) succeeded -> the blocker is the SCOPE CROSSING,\n"
+              "  not the identical content. Deleting a value from scope A suppresses\n"
+              "  writing the same text to scope B. That is a coupling ACROSS scopes,\n"
+              "  which for a memory store sold on tenant isolation is a serious\n"
+              "  finding and needs a founder ruling before it goes anywhere.")
+    elif d == LOST and e == OK:
+        print("  (d) failed, (e) succeeded -> cross-scope suppression is TRANSIENT:\n"
+              "  a settle before the write clears it. Propagation timing, not a\n"
+              "  permanent cross-scope rule. The adapter would need a settle on\n"
+              "  rescope, and the timeout must be sized from measurement.")
+    elif d == LOST and e == LOST:
+        print("  (d) and (e) both failed -> cross-scope suppression is NOT merely\n"
+              "  timing; waiting does not clear it. The strongest form of the\n"
+              "  finding, and the one with the clearest customer impact.")
+    elif d == OK:
+        print("  (d) succeeded -> 012 does not reproduce even under the true\n"
+              "  cross-scope condition, in isolation. That points at load- or\n"
+              "  sequence-dependence, which only the full 15 x 2 regen can settle.\n"
+              "  Do NOT read this as 'the original failure was spurious'.")
+    else:
+        print("  Pattern not anticipated. Record the outcomes and reason from them.")
+
     print("\nNo conclusion may be published from a single execution of this "
           "script. Re-run to establish stability first.")
 
