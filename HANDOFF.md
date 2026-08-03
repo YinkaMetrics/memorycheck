@@ -1675,3 +1675,223 @@ live tests skipping cleanly without them, and honest capability flags
 (`supports_ttl`) so anything inexpressible reports NOT_TESTED. Expect the
 async-delete lesson from `27e9599` to recur — check write-after-delete
 visibility before trusting a clean `reset()`.
+## 2026-08-03 — Quota-reset attempt: BLOCKED, nothing spent, nothing published
+
+The 2026-08-01 quota reset arrived and the held work was attempted. **Neither
+live task could run**, for reasons unrelated to quota. No Mem0 call was made,
+no SEARCH unit was spent, and **no public text was changed**. Recording what
+was established offline so the reset session is not repeated blind.
+
+### 1. What shipped
+
+| Commit | Change |
+|---|---|
+| _this entry_ | `fix(diagnostics):` pass the resolved API key into `MemoryClient` |
+
+That is the only code change. It is a one-line harness fix to
+`diagnostics/readd_after_delete.py` and it produces no provider verdict, so
+invariant 9 permits it unblocked.
+
+### 2. Findings
+
+**Blocker A — no credential.** `MEM0_API_KEY` is unset; `~/.mem0/config.json`
+does not exist; nothing in the repo carries a key (`.env`/`secrets.*` are
+gitignored and absent). CI holds no Mem0 credential either — `ci.yml` runs
+only `pytest` and `reference:strict`.
+
+**Blocker B — the endpoint is not reachable from this environment.**
+`api.mem0.ai:443` is refused by the environment's egress policy:
+
+```
+connect_rejected: gateway answered 403 to CONNECT (policy denial or upstream failure)
+host: api.mem0.ai:443
+```
+
+This is independent of Blocker A. **Supplying a key alone will not unblock the
+run from this environment**; the network policy has to permit `api.mem0.ai`,
+or the run has to happen somewhere that already does. A plain TCP check to
+`api.mem0.ai:443` *succeeds*, because it connects to the local proxy rather
+than to Mem0 — so reachability must be checked through the proxy status
+endpoint, not with a socket probe. Noting that because the naive check is
+misleading and was tried first.
+
+**Defect found and fixed — the experiment would have died at startup.** The
+script documents "the key is read from `MEM0_API_KEY`, falling back to
+`~/.mem0/config.json`, so no export is needed", but then constructed
+`MemoryClient()` with no argument. `MemoryClient.__init__` (2.0.15) resolves
+`api_key or os.getenv("MEM0_API_KEY")` and reads **nothing else** — the
+config-file fallback fed the quota probe only. Reproduced directly:
+
+```
+resolve_api_key() -> FOUND (from config.json)
+MemoryClient()    -> ValueError: Mem0 API Key not provided.
+```
+
+On the config-file path the script would have printed the cost, taken the
+operator's confirmation to spend ~96 units, and *then* aborted. Fixed by
+passing the resolved key through. Verified: construction now proceeds past
+the `ValueError` to a real network call.
+
+**Cost estimate, printed before spending (task asked for this).** From
+`--dry-run`, which spends nothing:
+
+| Arm | Worst case |
+|---|---|
+| (a) identical | ~51 units |
+| (b) varied | ~9 units |
+| (c) settle then identical | ~29 units |
+| quota probes | ~7 units |
+| **Total, one execution** | **~96 units** |
+
+The armed-experiment entry above quotes ~89; that figure excluded the seven
+quota probes. The protocol requires **two** executions before reading anything
+into the arms, so budget **~192 units** of the 1,000-unit period.
+
+**The 012 mechanism question is unanswered.** Content dedup vs. delete
+propagation outliving search observability cannot be distinguished without
+arm (c). No inference was drawn from the offline simulation — it validated
+that the arms discriminate, it says nothing about which row Mem0 is on.
+
+**Regen: the structural half reproduces, the provider half is unverified.**
+Denominators are fixed by the pack and the ledger, not by the provider, so
+they are checkable offline. On current `main`, `reference:strict --seeds 2`:
+
+| Check | Published mem0 denominator | Current `main` |
+|---|---|---|
+| current_fact_accuracy | 46 | **46** ✓ |
+| stale_reuse | 10 | **10** ✓ |
+| scope_leakage | 22 | **22** ✓ |
+| deletion_residue | 18 | **18** ✓ |
+
+`reference:naive --seeds 2` returns the complementary 10/10, 18/18, 4/4. So no
+change since `f230208` has moved the opportunity counts. **The numerators
+(0/18, 0/22, 10/10) are provider behaviour and remain unverified on current
+`main`** — that is exactly what the pending regen exists to establish, and it
+is still pending.
+
+**Scoring-path diff since `f230208`, read to predict the regen.** `oracle.py`
+and `report.py` both changed after the published figures were produced:
+
+- `oracle.py` — adds `detect_answering_layer` and a paraphrase branch that
+  degrades `missing_current_fact` to NOT_TESTED. The branch is gated on
+  `answering_layer == paraphrasing`. The Mem0 adapter templates stored
+  memories verbatim into its answer, and its `retrieved` list is the same
+  strings it joined into that answer, so `paraphrasing` cannot be set for
+  this adapter — a value present in `retrieved` is necessarily present in the
+  answer. The other four checks are untouched by the diff.
+- `report.py` — additive only: new `answering_layer` and `limitations` fields
+  plus presentation. `_rate` and `current_fact_accuracy` are unchanged.
+
+So the *expected* result is that the figures reproduce. **That is a prediction
+from reading the diff, not a measurement, and it is not a substitute for the
+regen.** It is recorded so that if the regen does move a figure, the diff has
+already been eliminated as the cause and the provider or the service build is
+where to look.
+
+**SDK has moved under the published figures.** `mem0ai` 2.0.15 was released
+**2026-08-01**, four days after the 2026-07-27 run on 2.0.14:
+
+| Version | Released |
+|---|---|
+| 2.0.13 | 2026-07-22 |
+| 2.0.14 | 2026-07-25 ← published figures |
+| 2.0.15 | 2026-08-01 |
+
+The extra is declared `mem0ai>=2.0.14`, an unpinned lower bound, so a fresh
+install today resolves 2.0.15. **A regen run now would not be a like-for-like
+reproduction of the published figures** — it would change the SDK at the same
+time as the commit. Whoever runs it should decide deliberately whether to pin
+2.0.14 to isolate the harness change, or take 2.0.15 and accept two moving
+parts.
+
+**PR #6017 has not merged.** `mem0ai/mem0#6017`, "fix: detect and resolve
+conflicting memories during ADD extraction", is **open**, targeting `main`,
+with a substantive review contesting the approach (whether cosine similarity
+distinguishes genuine conflict from mere relatedness, sync/async divergence,
+embedding-mode comparability). It proposes UPDATE-on-conflict via similarity
+thresholds (0.85 with LLM linking signals, 0.90 without) — directly on the
+ADD-only accumulation behaviour the `stale_reuse` result concerns. **There is
+no landed fix to re-run against**, so the stronger publication described in
+the task is not available yet.
+
+**2.0.15 relevance, stated carefully.** Its notes include a `delete_all`
+pagination fix ("memories beyond a single page silently left behind"). Read
+against our code: `MemoryClient.delete_all` is a single server-side
+`DELETE /v1/memories/` with filter params and has **no** client-side batching
+loop, so that fix appears to be in the OSS `Memory`/vector-store path, not the
+hosted client path this harness uses. Not asserting that as settled — it is
+from reading 2.0.15's source, not from a measurement.
+
+**Latent limitation, logged not fixed.** `MemoryClient.get_all` returns a
+paginated envelope (`count`/`next`/`previous`/`results`) and
+`Mem0Adapter._results` reads `results` only, ignoring `next`. Every scope and
+namespace read in the adapter is therefore **page one only**. Harmless for the
+current pack (a handful of facts per scope), but the failure mode is
+asymmetric and worth naming: in `delete()`, the doomed list *and* the
+confirmation poll both read page one, so they would agree with each other
+while residue survived beyond it — a false PASS on deletion_residue, the
+P1 direction that matters most. Same class as the Zep bug fixed in `e9311b8`.
+**Deliberately not fixed here**: changing the adapter mid-regeneration would
+invalidate the very run we are trying to reproduce. See FOR STRATEGY.
+
+**Suite state.** `pytest -q` on current `main`: **67 passed, 4 skipped** (the
+skips are the live-service tests, skipping cleanly without credentials, as
+intended).
+
+### 3. Decisions
+
+- **Nothing published, no public text touched.** Task step 4 asked for the
+  README and report preamble provenance to be updated to "produced by current
+  main, caveat removed". The regen that would make that true did not run, so
+  making the edit would have put a false provenance claim into public files.
+  The caveat stays until a regen actually backs it.
+- **The diagnostics key fix proceeded unblocked** — harness defect, no
+  provider verdict involved, invariant 9.
+- **The pagination limitation was logged, not fixed** — it is a core adapter
+  change and would confound the pending regen.
+- **No substitute instrument was used.** A Mem0 connector is present in this
+  session's tooling. It was not used: it is a different credential and project
+  from the benchmark account, its write path does not expose the `infer=False`
+  verbatim control the deterministic judge depends on, and writing probe
+  values into an account that may be someone's live memory is not a reversible
+  act. A measurement from it would not have been comparable to the published
+  figures, and quoting it as if it were would be worse than no measurement.
+
+### 4. FOR STRATEGY
+
+- **How should the regen be run?** It needs an environment with a Mem0
+  credential *and* egress to `api.mem0.ai`. This one has neither. Options:
+  run it locally, or provision an environment whose network policy permits
+  the host. This is a prerequisite for every remaining Mem0 item.
+- **Pin the SDK for the regen, or not?** 2.0.15 is current and the extra
+  floats to it. Pinning 2.0.14 isolates the harness change and gives a true
+  like-for-like; taking 2.0.15 measures today's stack but moves two variables
+  at once. **Recommend pinning 2.0.14 for the reproduction run, then a second
+  run on 2.0.15 as a separate, labelled measurement.** Needs a call.
+- **Should `mem0 = ["mem0ai>=2.0.14"]` become an exact pin?** A benchmark
+  whose published figures name an SDK version has a reproducibility interest
+  in the extra not floating. Applies to the `zep` and `langgraph` extras too.
+- **#6017 is open and contested — does that change the publication plan?**
+  The finding concerns behaviour that Mem0 has an open PR against. Publishing
+  a `stale_reuse` result while a fix is in review is a fairness question, not
+  a technical one. Note also that #6017 addresses conflict detection at
+  *extraction* time, whereas this harness writes with `infer=False`, so it may
+  not touch our write path at all even once merged. Worth establishing before
+  the delta is promised as "a stronger publication".
+- **When should the `get_all` pagination limitation be fixed?** Recommend
+  after the regen lands, so the reproduction is not confounded. Flagging it
+  because it can produce a false PASS on a P1 check, which is the direction
+  the honesty model cares about most.
+
+### 5. Next
+
+1. Obtain an environment with a Mem0 key and egress to `api.mem0.ai`.
+2. Run the three arms, twice, before reading anything into them (~192 units).
+3. Founder ruling on the mechanism, per the 2026-07-27 ruling.
+4. Full 15 × 2 regen on current `main`, SDK pinned per the ruling above.
+5. Only then: refresh README and report provenance, and revisit launch.
+
+External launch remains **HELD**. Nothing about the 012 mechanism, the regen,
+or #6017 should be repeated externally on the strength of this entry.
+
+---
