@@ -1935,3 +1935,64 @@ pagination limitation.
 Unchanged from the entry above. External launch remains **HELD**.
 
 ---
+## 2026-08-03 — PR #1 merged; protocol amended again (founder instruction)
+
+### 1. What shipped
+
+| Commit | Change |
+|---|---|
+| `96a7ca0` | `fix(diagnostics):` pass the resolved key into `MemoryClient` |
+| `5925a7f` | `docs:` handoff protocol — reconcile at session start, "done" means pushed |
+
+Both were sitting on an unmerged branch. **PR #1 is now merged to `main`**
+(rebase, keeping the linear history the repo has always had; CI green on the
+head commit, no review comments). The branch was then restarted from the new
+`main` for the follow-up below.
+
+`CLAUDE.md`, two further amendments, docs only:
+
+1. **"Complete" now means merged to `main`**, not merely pushed — written,
+   committed, pushed, merged, in that order. A session that stops short must
+   say which of the four steps it stopped at.
+2. **New "Environment notes" section** recording that sandboxed sessions
+   cannot reach `api.mem0.ai`, and that a TCP probe does not detect this.
+
+### 2. Findings
+
+None — no run, no measurement. The reachability facts recorded in
+`CLAUDE.md` are the ones already established in the entry two above.
+
+### 3. Decisions
+
+- **Rebase merge, not squash.** The two commits are separable — a code fix and
+  a protocol change — and the repo has no merge commits in its history.
+- **The "merged to `main`" rule carries an explicit invariant 9 carve-out.**
+  Added unasked, and flagged here for that reason. Without it the new rule
+  reads as "merge to be done", which would silently repeal the requirement
+  that a change flipping a provider FAIL to PASS gets founder sign-off
+  *before* merge. For those changes an unmerged branch is the **correct**
+  state, not an unfinished task, and the entry should say so rather than
+  merging to satisfy the completion rule. Reword if that is not the intent.
+- **Environment notes placed in `CLAUDE.md`, not `README.md`.** It is a fact
+  about where the harness can be run from, not about the product.
+
+### 4. FOR STRATEGY
+
+- **Who merges?** Today's instruction was to merge, and the amended rule makes
+  merge the definition of done — but taken together those mean an implementer
+  can self-merge, and the repo then has no human gate at all. That is in
+  tension with a project whose product is a review gate and whose invariant 9
+  names sign-off "before merge, no exceptions". The carve-out above narrows it
+  to provider-verdict changes; whether ordinary changes should also require a
+  second pair of eyes is a founder call, not one to settle here.
+- Unchanged from the entries above: where to run the regen, whether to pin
+  `mem0ai` 2.0.14 for a like-for-like reproduction, whether the extras should
+  be exact pins, whether an open and contested #6017 changes the publication
+  plan, and when to fix the `get_all` pagination limitation.
+
+### 5. Next
+
+Unchanged. The Mem0 work is still blocked on an environment with a credential
+*and* egress to `api.mem0.ai`. External launch remains **HELD**.
+
+---

@@ -92,6 +92,28 @@ after every change.
   (`pytest.mark.skipif` on the env var) so CI stays green.
 - Small, focused commits. Don't refactor core modules while adding adapters.
 
+## Environment notes
+
+**Live provider runs do not work from sandboxed sessions.** `api.mem0.ai` is
+refused by the sandbox egress policy — `connect_rejected: gateway answered 403
+to CONNECT` — so no Mem0 measurement can be taken there. **This is independent
+of credentials**: supplying `MEM0_API_KEY` does not help, because the
+connection never reaches Mem0. Any live provider run must happen in an
+environment with egress to that provider. Assume the same applies to Zep and
+to any future hosted adapter until measured otherwise.
+
+**A TCP probe is not a valid reachability check.** Opening a socket to
+`api.mem0.ai:443` *succeeds* inside the sandbox because it connects to the
+local proxy, not to Mem0 — so the naive check reports reachable for a host
+that is entirely blocked. Check the proxy instead:
+
+```bash
+curl -sS "$HTTPS_PROXY/__agentproxy/status"     # see recentRelayFailures
+```
+
+Confirm reachability before planning a metered run, not after spending quota
+on one that cannot connect.
+
 ## Handoff protocol
 
 **Start every session by reconciling the log against the repo.** Before doing
@@ -121,11 +143,20 @@ final commit**. Append a dated entry containing:
 5. **Next** — the next task per the roadmap.
 
 **A task is not complete until its `HANDOFF.md` entry is written, committed,
-and _pushed to origin_.** All three, in that order. Work sitting in a local
-commit is invisible to review and indistinguishable from work never done — so
-"done" means pushed, and a session that cannot push has not finished its task
-and must say which step it stopped at. Blocked work still gets an entry: the
-blocker, what was established anyway, and what remains unverified.
+pushed, and _merged to `main`_.** All four, in that order. A local commit is
+invisible to review; so is a pushed branch nobody merges — both are
+indistinguishable from work never done, and the second is the one that
+actually bit us (2026-08-03: a session reported "done" on work that sat
+unmerged on a branch). So "done" means **on `main`**, and a session that
+stops short has not finished its task and must say which of the four steps it
+stopped at. Blocked work still gets an entry: the blocker, what was
+established anyway, and what remains unverified.
+
+This does **not** repeal invariant 9. A change that would flip a provider FAIL
+to PASS still needs founder sign-off *before* merge — for those, "complete"
+waits on the ruling, and the branch sitting unmerged is the correct state, not
+an unfinished task. Say so in the entry rather than merging to satisfy this
+rule.
 
 Entries stay factual and terse. **`HANDOFF.md` is public**: never include
 customer names, prospect details, credentials, account identifiers, or
