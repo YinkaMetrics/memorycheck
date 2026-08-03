@@ -2307,3 +2307,126 @@ two exclusions above are treated as stable.
 External launch remains **HELD**.
 
 ---
+## 2026-08-03 — Run instrumentation: turning the 012 abort into a curve
+
+### 1. What shipped
+
+Per-scenario timing and cumulative operation count on `memorycheck run`, so a
+future abort carries a latency trend rather than only a location. Plus the
+standing caveat below, which is the more important half of this entry.
+
+- `runner.py` — `OpTiming`, `ScenarioTiming`, `RunProgress`. Every adapter
+  call is timed individually; rescope is timed as two ops (`rescope:del`,
+  `rescope:add`) because the `012` abort is the *write* half and averaging it
+  with the delete would blur the one number we are looking for.
+- `cli.py` — live per-scenario progress to **stderr** (stdout stays the
+  report), and a trace dump on `AdapterError`.
+
+Two design points, both load-bearing for the abort case:
+
+1. **Ops are timed in a `finally`**, so the operation that *causes* the abort
+   is recorded with its duration. A naive record-on-success would drop
+   precisely the most informative timing in the run.
+2. **`RunProgress` is mutated in place and held by the caller**, so it
+   survives the exception unwinding the suite. Same reason.
+
+The no-memory baseline is deliberately **not** instrumented — it never touches
+the provider, and its in-process timings would flatten the curve.
+
+### 2. Findings
+
+**Verified against a simulated aborting provider** — latency climbing with
+cumulative ops, timing out on the 012 rescope write, no quota spent:
+
+```
+  scenario                           seed   ops    cum   elapsed   mean op    max op
+  001-correction-stale-reuse            0     7      7      0.0s     0.00s     0.00s
+  ...
+  011-multi-user-same-tenant            1     5    120      0.1s     0.01s     0.01s
+  012-rescope-then-readd                0     2    122      0.0s     0.01s     0.01s
+
+  last operations before the abort:
+  #121   012-rescope-then-readd    seed 0  step -1  reset     0.01s
+  #122   012-rescope-then-readd    seed 0  step 0   write     0.01s  <-- FAILED HERE
+```
+
+The partial scenario is recorded despite the abort, the failing op is marked,
+and the mean-op column carries the trend. Note the cumulative count at the
+abort — **122 operations** — which matches the "~100 prior operations" the
+original run had accumulated by the time it reached 012.
+
+**`pytest -q`: 67 passed, 4 skipped.** One defect found and fixed during the
+work: adapter `query` takes its own `seed=` keyword, which collided with the
+timing helper's parameter of the same name. The helper's metadata parameters
+are now positional-only.
+
+**Deliberately not done: the timings are not in the JSON/MD evidence.** They
+print to stderr only. Adding them to the report would touch `report.py`, which
+is scoring path, immediately before a regeneration whose entire purpose is
+reproducing published figures. Not worth confounding the regen for. Revisit
+after it lands.
+
+### 3. STANDING CAVEAT — what no arm can show
+
+**Arms (a)-(e) test an isolated, freshly-scoped system.** Each runs a handful
+of operations against brand-new `user_id`s with no accumulated state, no
+concurrent load, and no backlog. The original `012` abort occurred roughly 120
+operations into a full run, against scopes carrying everything that came
+before them.
+
+**If `012`'s mechanism is load-, backlog- or sequence-dependent, no arm will
+reproduce it — and a clean sweep across ALL FIVE arms still would not close
+the question.** Only a full 15 × 2 run recreates the original conditions.
+
+This is now recorded in the diagnostic's own docstring as well, because that
+is where the next person reading the arms will look, and a caveat that lives
+only in the log is a caveat that gets missed.
+
+It follows that the regen is **two things at once**, and both readings are
+legitimate:
+
+- the clean-provenance regeneration needed to unblock publication, and
+- the only faithful reproduction attempt for `012`.
+
+Neither outcome is a non-result. Completing clean gives provenance and says
+012 did not reproduce under load; aborting at 012 again *is* the
+characterisation that has been missing, because it establishes
+load-or-sequence dependence — which is exactly what the isolated arms cannot
+establish.
+
+### 4. Decisions
+
+- **(d)/(e) were not run this session.** Still no egress to `api.mem0.ai` from
+  here; the instruction was to run them on the Mac, and that is where they
+  have to happen. Nothing was spent.
+- **The second stability run of (a)-(c) is deferred, not cancelled.** The two
+  exclusions — content-level dedup, same-scope delete reaping — stand as
+  **single-execution results** and are labelled as such wherever they appear.
+  They are not yet stable findings.
+- **Instrumentation before the regen, not after.** It is cheap, it cannot
+  change a verdict (it only observes), and its entire value is realised on a
+  run that aborts — so shipping it after the regen would waste the one run it
+  was built for.
+
+### 5. FOR STRATEGY
+
+- Unchanged and still blocking: an environment with egress. (d)/(e) cost ~10
+  units if they pass; the regen ~106.
+- Unchanged: whether to pin `mem0ai` 2.0.14 for the regen, whether the extras
+  should be exact pins, whether an open and contested #6017 changes the
+  publication plan, and when to fix the `get_all` pagination limitation.
+- **Reminder for whoever runs the regen:** the run now prints progress to
+  stderr. If it is piped, capture stderr too (`2>&1 | tee`), or the latency
+  curve — the whole point of this change — is lost precisely when it aborts.
+
+### 6. Next
+
+1. Run (d)/(e) on a machine with egress (~10 units if passing).
+2. Full 15 × 2 regen on current `main` (~106 units), capturing stderr.
+3. Second stability run of (a)-(c) (~15 units), deferred but owed.
+4. Founder ruling before any of it touches published text — the regen and any
+   provenance edit are gated tier.
+
+External launch remains **HELD**.
+
+---

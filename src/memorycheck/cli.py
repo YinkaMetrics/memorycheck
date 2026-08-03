@@ -20,7 +20,7 @@ from .judge import load_judge
 from .ledger import ScenarioError
 from .oracle import evaluate
 from .report import build_summary, print_summary, write_reports
-from .runner import run_suite
+from .runner import RunProgress, run_suite
 from .scenario import load_dir
 
 
@@ -53,14 +53,52 @@ def _warn_if_unverified(adapter) -> None:
     print(f"{line}\n", file=sys.stderr)
 
 
+#: Holds the in-flight RunProgress so the top-level AdapterError handler can
+#: print the latency curve. A run that aborts is the case the instrumentation
+#: exists for, so the trace must outlive the stack that produced it.
+_RUN_PROGRESS: list = []
+
+
+def _dump_progress() -> None:
+    """On abort, print what the run had done and how long it was taking.
+
+    Turns 'it failed at 012' into 'it failed at 012, and here is whether
+    latency was climbing on the way there'. A backlog-dependent mechanism
+    shows as a rising mean; a one-off shows as a spike on a flat line.
+    """
+    if not _RUN_PROGRESS:
+        return
+    progress = _RUN_PROGRESS[-1]
+    if not progress.ops:
+        return
+    print("\n  --- run trace up to the abort ---", file=sys.stderr)
+    for line in progress.curve_lines():
+        print(line, file=sys.stderr)
+    print("\n  last operations before the abort:", file=sys.stderr)
+    for line in progress.tail_lines():
+        print(line, file=sys.stderr)
+    print("\n  Read the mean/max columns for a trend before reading the abort\n"
+          "  as a property of the scenario it landed on.", file=sys.stderr)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     scenarios = load_dir(args.scenarios)
     adapter = load_adapter(args.adapter)
     judge = load_judge(args.judge)
     _warn_if_unverified(adapter)
 
+    # Instrumentation. Held by this frame, so an AdapterError partway through
+    # still leaves the latency curve in hand — see the handler in main().
+    # Progress goes to stderr so stdout stays the report.
+    progress = RunProgress(emit=lambda t: print(
+        f"  [{t.cumulative_ops:>4d} ops] {t.scenario_id[:34]:34s} seed {t.seed}  "
+        f"{t.seconds:>6.1f}s  mean {t.mean_op_seconds:>5.2f}s  "
+        f"max {t.max_op_seconds:>5.2f}s ({t.max_op})", file=sys.stderr))
+    _RUN_PROGRESS.append(progress)
+
     suite = run_suite(
-        scenarios, adapter, judge, seeds=args.seeds, baseline=not args.no_baseline
+        scenarios, adapter, judge, seeds=args.seeds,
+        baseline=not args.no_baseline, progress=progress,
     )
     # Classify once and apply to both, so the baseline is graded on the same
     # terms as the run it is compared against.
@@ -154,6 +192,7 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(2)
     except AdapterError as e:
         print(f"adapter error: {e}", file=sys.stderr)
+        _dump_progress()
         sys.exit(2)
 
 
