@@ -2685,3 +2685,105 @@ worth knowing.
 External launch remains **HELD**.
 
 ---
+## 2026-08-04 — Founder approval recorded; arm (f) FAILED, the mechanism is real
+
+### 1. What shipped
+
+`fix(mem0): reset() proves the namespace is writable, never sleeps` — merged to
+`main` as **`e7e89dc`** (PR #7, rebase).
+
+**Founder approval, per the gated-tier mechanism.** PR #7 was labelled
+`needs-founder-review` and held unmerged pending a ruling. Approved
+2026-08-04 by the founder, verbatim:
+
+> Approved. Retry loop is the right call — arm (f) showed a swallowed write
+> never becomes retrievable (25 reads / 120s), so re-issuing is the only thing
+> that can resolve it and single-shot would abort runs unnecessarily. Merge.
+
+That closes the invariant 9 requirement: the change can convert phantom
+`missing_current_fact` FAILs into passes, so it needed sign-off before merge,
+and this is the record of it. The retry-vs-single-shot deviation flagged on the
+PR was explicitly ratified.
+
+### 2. Findings — **arm (f) FAILED**
+
+**Reported, not observed here.** From the founder's approval message. This is
+the first live result for the namespace arms.
+
+| Arm | Outcome | Evidence |
+|---|---|---|
+| `f_namespace_delete_all` | **WRITE_LOST** | swallowed write never retrievable — 25 reads over 120s |
+
+25 reads at the diagnostic's 5s poll interval is the full `CONFIRM_TIMEOUT`
+window. The write was acknowledged and then never appeared, for two minutes.
+
+**What this establishes.** Read against the arms already run:
+
+| Delete mechanism | Arms | Result |
+|---|---|---|
+| per-key delete by id | (a), (b), (c) | all RE_ADD_VISIBLE, 0s |
+| namespace `delete_all` | **(f)** | **WRITE_LOST, 120s** |
+
+The mechanism is **specific to `delete_all`**. It is not content-level dedup
+(ruled out by (b)), not same-scope delete reaping (ruled out by (a)/(c)) — it
+is the namespace-wide delete, which is the one `reset()` performs and the one
+no arm tested until now. The per-key substitution in (a)-(e) is confirmed as
+the reason those arms all passed.
+
+**It also directly validates the retry design.** Polling a swallowed write for
+120s produced nothing. That is the empirical form of the argument made on the
+PR before this result was known here: polling harder cannot resolve a
+swallowed write, only re-issuing can. A single-shot sentinel would have turned
+this condition into an aborted run.
+
+### 3. Open — and one of these is a sizing risk
+
+**(g) is not yet reported.** Without it the transient-vs-persistent question
+stays open, and the pre-stated readings diverge sharply:
+
+- (f) LOST + (g) VISIBLE → the reaping window is bounded and a settle clears
+  it; the sentinel loop will converge.
+- (f) LOST + (g) LOST → `delete_all` suppresses writes for longer than 60s,
+  which would make it unusable as a reset primitive and would mean the
+  sentinel loop cannot converge either.
+
+**Sizing risk, flagged now rather than after a wasted run.** The shipped
+sentinel loop is bounded by `_CONVERGE_TIMEOUT` = **30s**, with 5s per
+attempt. Arm (f) shows the condition persisting for **at least 120s** when a
+single write is polled. If the reaping window genuinely exceeds 30s, then
+`reset()` will exhaust its budget and raise — the *safe* outcome, and far
+better than silently losing facts, but it would abort runs at every reset that
+deletes.
+
+Re-issuing may well converge much sooner than 120s, since each new write is a
+fresh attempt rather than a wait on a dead one — that is precisely the
+difference the retry loop exploits, and (f) cannot measure it because it never
+re-issues. **But it is unmeasured.** The `empty_to_writable_s` series now
+emitted on every deleting reset is what sizes `_CONVERGE_TIMEOUT` honestly; if
+attempts routinely run to the ceiling, raise it from data rather than guessing.
+
+**Missing for the promotion rule.** No results filename was supplied for the
+(f) run, so this entry cites none — contrary to the rule added on 2026-08-03.
+Also unknown: whether (a)-(e) re-ran in the same execution, the SEARCH spend,
+and (g)'s outcome. Please supply the `diagnostics/results/…json` filename so
+the raw output can be found again.
+
+### 4. Decisions
+
+- **Merged on explicit approval**, quoted above, per the gated-tier mechanism.
+  The instruction to build the change was not treated as approval to merge it.
+- **`_CONVERGE_TIMEOUT` left at 30s for now.** Raising it on the strength of a
+  number measured under a different procedure (single write, no re-issue)
+  would be guessing. The series will size it.
+
+### 5. Next
+
+1. Report (g), and the (f) results filename.
+2. Full 15 × 2 regen, capturing stderr — it now yields the
+   `empty_to_writable_s` series, which sizes the sentinel budget.
+3. Promote the `003` abort with its curve.
+4. Founder ruling before any published text changes.
+
+External launch remains **HELD**.
+
+---
