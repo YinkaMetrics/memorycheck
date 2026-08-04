@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from memorycheck.adapters.base import AdapterError
 from memorycheck.adapters.mem0 import Mem0Adapter
 from memorycheck.judge import load_judge
 from memorycheck.ledger import Scope
@@ -95,6 +96,7 @@ def offline_adapter(monkeypatch):
     adapter = Mem0Adapter.__new__(Mem0Adapter)
     adapter._client = FakeMem0Client()
     adapter._namespace = "default"
+    adapter.reset_convergence = []
     return adapter
 
 
@@ -167,6 +169,96 @@ def test_reset_deletes_when_the_namespace_has_residue(offline_adapter):
     before = a._client.delete_all_calls
     a.reset("ns")  # same namespace, now holds residue
     assert a._client.delete_all_calls == before + 1
+
+
+class ReapingClient(FakeMem0Client):
+    """A client whose delete_all keeps swallowing writes for `reap_writes`
+    more calls *after* the namespace already reads empty.
+
+    This is the measured Mem0 behaviour the sentinel exists for: 6/14 writes
+    lost when a delete_all preceded them. Reading empty is not proof the
+    delete finished.
+    """
+
+    def __init__(self, reap_writes: int) -> None:
+        super().__init__()
+        self.reap_budget = reap_writes
+        self._remaining = 0
+        self.swallowed = 0
+
+    def delete_all(self, app_id=None, **kw):
+        result = super().delete_all(app_id=app_id, **kw)
+        # The namespace now reads empty, but the delete keeps reaping — which
+        # is precisely the state that reading empty fails to detect.
+        self._remaining = self.reap_budget
+        return result
+
+    def add(self, messages, **kw):
+        if self._remaining > 0:
+            self._remaining -= 1
+            self.swallowed += 1
+            return {"results": []}  # acknowledged, never stored
+        return super().add(messages, **kw)
+
+
+def _adapter_with(client):
+    a = Mem0Adapter.__new__(Mem0Adapter)
+    a._client = client
+    a._namespace = "default"
+    a.reset_convergence = []
+    return a
+
+
+def test_reset_proves_the_namespace_is_writable_again(monkeypatch):
+    """The sentinel absorbs the reaped writes so the scenario's first real
+    write survives — the whole point of the fix."""
+    monkeypatch.setattr("memorycheck.adapters.mem0.time.sleep", lambda _: None)
+    a = _adapter_with(ReapingClient(reap_writes=2))
+    a.reset("ns")
+    a.write(ALICE, "plan", "starter-legacy-2024")
+    a.reset("ns")  # now has residue -> issues delete_all -> sentinel path
+
+    # The reaping window was consumed by sentinel attempts, not by the
+    # scenario's fact. Without the sentinel this write would have vanished
+    # and been scored as a missing current fact against the provider.
+    a.write(ALICE, "plan", "growth-2026")
+    assert "growth-2026" in a.query(ALICE, "which plan?").answer
+    assert a._client.swallowed >= 1
+
+
+def test_reset_leaves_no_sentinel_behind(monkeypatch):
+    monkeypatch.setattr("memorycheck.adapters.mem0.time.sleep", lambda _: None)
+    a = _adapter_with(FakeMem0Client())
+    a.reset("ns")
+    a.write(ALICE, "plan", "starter-legacy-2024")
+    a.reset("ns")
+    assert not [r for r in a._client.rows if "sentinel" in str(r.get("memory", ""))]
+
+
+def test_reset_records_the_empty_to_writable_gap(monkeypatch):
+    monkeypatch.setattr("memorycheck.adapters.mem0.time.sleep", lambda _: None)
+    a = _adapter_with(FakeMem0Client())
+    a.reset("ns")
+    a.write(ALICE, "plan", "starter-legacy-2024")
+    assert a.reset_convergence == []      # no delete yet, nothing to measure
+    a.reset("ns")
+    assert len(a.reset_convergence) == 1
+    assert "empty_to_writable_s" in a.reset_convergence[0]
+
+
+def test_reset_raises_rather_than_starting_an_unwritable_scenario(monkeypatch):
+    """If the sentinel never lands, reset must abort. Proceeding would lose
+    the scenario's first writes and score them against the provider."""
+    monkeypatch.setattr("memorycheck.adapters.mem0.time.sleep", lambda _: None)
+    monkeypatch.setattr("memorycheck.adapters.mem0._CONVERGE_TIMEOUT", 0.05)
+    a = _adapter_with(ReapingClient(reap_writes=10_000))  # never stops reaping
+    a.reset("ns")
+    a._client.rows.append(
+        {"id": "residue", "memory": "x", "metadata": {}, "user_id": "u",
+         "app_id": a._app_id()}
+    )
+    with pytest.raises(AdapterError, match="not accepting writes"):
+        a.reset("ns")
 
 
 # ------------------------------------------------------------------ live layer

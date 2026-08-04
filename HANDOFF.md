@@ -2563,3 +2563,125 @@ to stop every Mem0 run from this environment.
 External launch remains **HELD**.
 
 ---
+## 2026-08-03 — reset() verifies writability instead of hoping (founder-instructed)
+
+**Invariant 9 note, up front.** This change can convert phantom
+`missing_current_fact` FAILs into passes — the guarded direction. It was
+**instructed by the founder**, which is the sign-off invariant 9 requires
+before merge, and this entry is the record of it. The test of good faith
+named in the invariant holds: a genuine finding survives untouched, because
+the sentinel only proves the namespace accepts writes again and is deleted
+before any scenario value is written. Nothing about retrieval, supersession,
+scoping or deletion behaviour is affected.
+
+### 1. What shipped
+
+`reset()` no longer treats "the namespace reads empty" as proof the
+`delete_all` finished. When it actually deleted, it now proves the namespace
+is writable again before returning.
+
+- Write a sentinel under identifiers no scenario maps onto, poll for it,
+  delete it, return.
+- **Only on the delete path.** The skip path — namespace already empty, the
+  overwhelmingly common case — is untouched and still costs nothing.
+- If the namespace never accepts a write within the timeout, **raise**. A
+  scenario is not started on a store that would swallow its first facts.
+- **No blanket settle was added**, per instruction.
+
+### 2. Findings
+
+**One deliberate refinement of the brief: the sentinel retries.** The brief
+said write a sentinel, poll, raise if it never lands. Implemented as a bounded
+retry loop instead, because a single-shot sentinel is wrong in exactly the
+case it exists for: a write swallowed by the still-reaping delete_all **never
+becomes retrievable however long it is polled**. Polling harder cannot help;
+only writing again can. A single-shot sentinel would therefore abort runs that
+a second attempt moments later would have saved — trading a phantom FAIL for a
+phantom abort.
+
+Each attempt gets a short window (`_SENTINEL_ATTEMPT_TIMEOUT` = 5s); the loop
+as a whole is bounded by `_CONVERGE_TIMEOUT` = 30s, so it cannot hang. The
+attempt count is recorded and logged. Say if you want the strict single-shot
+version instead — it is a two-line change.
+
+**The measurement series, gathered free on every run.** Each reset that
+deletes appends to `adapter.reset_convergence`:
+
+```
+{"app_id": ..., "empty_after_s": ..., "empty_to_writable_s": ...,
+ "sentinel_attempts": ...}
+```
+
+and prints to stderr:
+
+```
+  [reset] mc_ns: namespace read empty after 2.5s, writable 1.5s later (2 sentinel attempt(s))
+```
+
+`empty_to_writable_s` is the number nobody has had: **how long a delete_all
+keeps reaping after it stops being visible to search**. One value is an
+anecdote; a run produces one per deleting reset, and the distribution is the
+real characterisation. This makes arms (f)/(g) a confirmation rather than the
+only source — and it collects data on runs that pass, not just ones that
+break.
+
+**Four tests added, 67 → 71 passing.** They use a `ReapingClient` whose
+`delete_all` arms a window of swallowed writes *after* the namespace already
+reads empty — the measured 6/14 behaviour:
+
+- the sentinel absorbs the reaping window, so the scenario's first real write
+  survives (without it, that write vanishes and is scored as a missing fact);
+- no sentinel is left behind;
+- the empty-to-writable gap is recorded, and is **not** recorded on the skip
+  path;
+- reset raises rather than starting a scenario against an unwritable
+  namespace.
+
+Building those tests caught a defect in my first fake: it armed the reaping
+from construction rather than from `delete_all`, which is not the condition —
+reaping is a consequence of the delete. Fixed before it could validate the
+wrong thing.
+
+**Sentinel cleanup uses a per-key delete by id, never a `delete_all`**, so the
+cleanup cannot restart the condition it just cleared. Arms (a)-(c) measured
+per-key delete followed by an immediate write landing at 0s, three for three,
+which is the evidence for that choice.
+
+**Residual risk, stated.** A sentinel that lands *after* cleanup has run would
+persist. It sits under a tenant/user pair no scenario maps onto, so no
+scenario query can retrieve it, and the next `reset()` of that namespace
+removes it. It would, however, make the namespace read non-empty, which turns
+a future skip-path reset into a delete-path one. Bounded and self-healing, but
+worth knowing.
+
+### 3. Decisions
+
+- **Retry rather than single-shot**, for the reason above. Flagged as a
+  deviation.
+- **Verify only when we deleted.** Verifying on the skip path would add a
+  write and several reads per scenario per seed for a condition that cannot
+  arise — meaningful SEARCH spend for nothing.
+- **Raise rather than continue** when the namespace stays unwritable. The
+  alternative is scoring the provider on facts our own reset destroyed.
+
+### 4. FOR STRATEGY
+
+- **This does not close the `012`/`003` question**, and should not be read as
+  doing so. It removes one harness-side mechanism by which a run can be
+  killed or a provider mis-scored. Whether the aborts were that mechanism is
+  still open — but the next run will now *measure* the gap rather than guess.
+- The `003` abort still needs promoting properly, with its results filename
+  and latency curve.
+- Unchanged: pinning `mem0ai` 2.0.14 for the regen, exact pins for extras,
+  whether #6017 changes the publication plan, `get_all` pagination.
+
+### 5. Next
+
+1. Run the regen or (f)/(g) on the Mac — either now yields the
+   empty-to-writable series as a side effect.
+2. Promote the `003` abort with its curve.
+3. Founder ruling before any published text changes.
+
+External launch remains **HELD**.
+
+---

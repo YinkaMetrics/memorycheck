@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import time
+import uuid
 
 from ..ledger import Scope
 from .base import AdapterError, MemoryAdapter, QueryResult, poll_until
@@ -47,6 +49,17 @@ _SEARCH_TOP_K = 100
 # ceilings are generous so a slow day is waited out rather than mis-scored.
 _CONVERGE_TIMEOUT = 30.0
 _CONVERGE_INTERVAL = 0.5
+
+# Key/scope fragment for the post-delete_all sentinel. Distinctive so it can
+# never collide with a scenario value, and scoped to identifiers no scenario
+# maps onto, so a stray sentinel could not be read by a scenario query.
+_SENTINEL = "mc_reset_sentinel"
+
+# Per-attempt window for a sentinel write to become retrievable. Short, because
+# a swallowed write never appears however long we wait — the useful move is to
+# try again, not to wait longer. The retry loop overall stays bounded by
+# _CONVERGE_TIMEOUT.
+_SENTINEL_ATTEMPT_TIMEOUT = 5.0
 
 
 def _slug(text: str) -> str:
@@ -90,6 +103,11 @@ class Mem0Adapter(MemoryAdapter):
             ) from e
         self._client = MemoryClient()  # reads MEM0_API_KEY from the environment
         self._namespace = "default"
+        #: One entry per reset that actually deleted: how long the namespace
+        #: took to read empty, and how much longer until it accepted a write.
+        #: Read this after a run — it is the empirical answer to "how long does
+        #: a delete_all keep reaping", accumulated at no extra cost.
+        self.reset_convergence: list[dict] = []
 
     # --------------------------------------------------------------- scoping
 
@@ -117,12 +135,20 @@ class Mem0Adapter(MemoryAdapter):
         So: read the namespace first, and skip the delete entirely when it is
         empty (the overwhelmingly common case — namespaces are per scenario and
         seed). When there really is residue, delete it and wait for the
-        namespace to read empty before returning, so no write can race it.
+        namespace to read empty.
+
+        Reading empty is necessary but **not sufficient**: the delete can keep
+        reaping writes after it has stopped being visible to search, which is
+        how the 6/14 above happened. So when we did delete, we prove the
+        namespace is writable again by writing a sentinel and polling for it,
+        then removing it. That is correct at any propagation latency, unlike a
+        fixed sleep — a sleep is either too short to be safe or too long to be
+        affordable, and it can never tell you which.
         """
         self._namespace = namespace or "default"
         app_id = self._app_id()
         if not self._namespace_rows(app_id):
-            return  # nothing to clear, so nothing to race
+            return  # nothing to clear, so nothing to race, and nothing to prove
         _call("reset delete_all", self._client.delete_all, app_id=app_id)
         cleared, waited = poll_until(
             lambda: not self._namespace_rows(app_id),
@@ -135,6 +161,91 @@ class Mem0Adapter(MemoryAdapter):
                 f"{waited:.1f}s — refusing to run, since leftovers would be "
                 "scored against the provider"
             )
+        self._confirm_namespace_writable(app_id, empty_after=waited)
+
+    def _confirm_namespace_writable(self, app_id: str, empty_after: float) -> None:
+        """Prove a just-wiped namespace accepts writes again, then clean up.
+
+        Called only when `reset()` actually issued a delete_all, so the common
+        skip path costs nothing. Writes one sentinel, polls for it, deletes it.
+
+        Why a sentinel rather than a settle: the question is not "has enough
+        time passed" but "does a write survive", and only a write can answer
+        it. This is correct whether propagation takes 200ms or 20s, and it
+        reports the number instead of assuming one.
+
+        The sentinel is removed with a per-key delete by id, not a delete_all,
+        so the cleanup cannot restart the condition it just cleared — arms
+        (a)-(c) measured per-key delete followed by an immediate write as
+        landing at 0s, three for three.
+        """
+        sentinel_scope = Scope(tenant_id=f"{_SENTINEL}_t", user_id=f"{_SENTINEL}_u")
+        uid = self._user_id(sentinel_scope)
+        started = time.monotonic()
+        attempts = 0
+        landed = False
+
+        # Re-issue the sentinel rather than writing one and hoping. A write
+        # swallowed by the still-reaping delete_all never becomes retrievable
+        # no matter how long we poll it, so a single-shot sentinel would abort
+        # a run that a second attempt moments later would have saved. Each
+        # attempt gets a short window; the loop as a whole is bounded by
+        # _CONVERGE_TIMEOUT, so this cannot hang.
+        while not landed:
+            attempts += 1
+            value = f"{_SENTINEL}-{uuid.uuid4().hex[:12]}"
+            _call(
+                "reset sentinel write",
+                self._client.add,
+                f"{_SENTINEL}: {value}",
+                user_id=uid,
+                app_id=app_id,
+                metadata={"key": _SENTINEL},
+                infer=False,
+            )
+            remaining = _CONVERGE_TIMEOUT - (time.monotonic() - started)
+            if remaining <= 0:
+                break
+            landed, _ = poll_until(
+                lambda v=value: any(
+                    v in (m.get("memory") or "")
+                    for m in self._scope_memories(sentinel_scope)
+                ),
+                timeout=min(_SENTINEL_ATTEMPT_TIMEOUT, remaining),
+                interval=_CONVERGE_INTERVAL,
+            )
+            if not landed and time.monotonic() - started >= _CONVERGE_TIMEOUT:
+                break
+
+        took = time.monotonic() - started
+        if not landed:
+            raise AdapterError(
+                f"mem0 reset: namespace {app_id!r} read empty after "
+                f"{empty_after:.1f}s but was still not accepting writes "
+                f"{took:.1f}s later — {attempts} sentinel write(s) were "
+                "acknowledged and never became retrievable, so the delete_all "
+                "is still reaping. Refusing to start a scenario, because its "
+                "first writes would be lost and scored against the provider "
+                "as missing facts."
+            )
+        # Remove the sentinel so it cannot be seen by any scenario query.
+        for mem in self._scope_memories(sentinel_scope):
+            if (mem.get("metadata") or {}).get("key") == _SENTINEL and mem.get("id"):
+                _call("reset sentinel delete", self._client.delete, mem["id"])
+
+        # The series this produces IS the characterisation of the reset race:
+        # empty-to-writable, measured on every reset that actually deleted,
+        # gathered for free on every run. A single number is an anecdote; this
+        # accumulates the distribution.
+        self.reset_convergence.append(
+            {"app_id": app_id, "empty_after_s": round(empty_after, 2),
+             "empty_to_writable_s": round(took, 2), "sentinel_attempts": attempts}
+        )
+        print(
+            f"  [reset] {app_id}: namespace read empty after {empty_after:.1f}s, "
+            f"writable {took:.1f}s later ({attempts} sentinel attempt(s))",
+            file=sys.stderr,
+        )
 
     def write(
         self, scope: Scope, key: str, value: str, ttl_steps: int | None = None
