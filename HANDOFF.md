@@ -2787,3 +2787,109 @@ the raw output can be found again.
 External launch remains **HELD**.
 
 ---
+## 2026-08-04 — Citations promoted, (g) recorded: the reaping window is bounded
+
+All figures below are **reported, not observed in-session** — promoted by hand
+per the out-of-environment rule, now with the citations that entry was missing.
+
+### 1. What shipped
+
+`HANDOFF.md` citations and (g)'s result; `diagnostics/readd_after_delete.py`
+STATUS block brought up to date (it still said (d)-(g) had not run).
+
+### 2. Findings — the full seven-arm picture, with sources
+
+| Arm | Outcome | Detail | Results file |
+|---|---|---|---|
+| (a) `a_identical` | RE_ADD_VISIBLE | 0s, 4 reads, 5 units | `readd_after_delete_1785797173.json` |
+| (b) `b_varied` | RE_ADD_VISIBLE | 0s, 4 reads, 5 units | `readd_after_delete_1785797173.json` |
+| (c) `c_settle_then_identical` | RE_ADD_VISIBLE | 0s after 60s settle, 4 reads, 5 units | `readd_after_delete_1785797173.json` |
+| (d) `d_cross_scope_identical` | RE_ADD_VISIBLE | — | `readd_after_delete_1785800147.json` |
+| (e) `e_cross_scope_settle` | RE_ADD_VISIBLE | — | `readd_after_delete_1785800147.json` |
+| (f) `f_namespace_delete_all` | **WRITE_LOST** | never retrievable, 25 reads / 120s | `readd_after_delete_1785828208.json` |
+| (g) `g_namespace_settle` | **WRITE_VISIBLE** | 0s after 60s settle, 3 reads, 4 units | `readd_after_delete_1785828208.json` |
+
+**(f) LOST + (g) VISIBLE resolves the fork**, and it matches the branch stated
+in advance for `reaps, transient`:
+
+- The reaping window after a `delete_all` is **real** — polling a namespace
+  until it reads empty is **not** sufficient, which is exactly what `reset()`
+  did before `e7e89dc`.
+- The window is **bounded** — a 60s settle cleared it completely, write
+  retrievable at 0s.
+- **`delete_all` stays usable** as a reset primitive, provided the caller
+  verifies writability instead of trusting emptiness. That is what the
+  sentinel now does, and this is the evidence it converges.
+
+**Every per-key arm passed; the one `delete_all` arm failed.** Six arms across
+three executions isolate the mechanism to the namespace-wide delete.
+
+**Correcting my own framing from the previous entry.** That entry said arm (f)
+shows "the condition persisting for at least 120s". That reads as a claim
+about the window, and it is not one. (f) polls a *single already-swallowed*
+write: such a write is dead permanently, so 120s of polling measures how long
+we waited, not how long the store reaps. **(g) is the only bound on the
+window, and it bounds it from above at 60s.** The lower bound is still
+unmeasured.
+
+**What that means for the sentinel budget.** `_CONVERGE_TIMEOUT` is 30s, 5s
+per attempt. The window is somewhere in (0s, 60s]. If it typically sits under
+30s the loop converges; if it sits above, `reset()` exhausts its budget and
+raises — safe, but it would abort runs. **Still not enough information to size
+it, and still not worth guessing at**: `empty_to_writable_s`, emitted on every
+deleting reset since `e7e89dc`, measures the window directly and under the
+retry procedure rather than the single-write one. First real run settles it.
+
+**The `003` abort — terminal-reported, no results file.** Provenance:
+`memorycheck run scenarios --adapter mem0 --seeds 2`, founder's Mac,
+2026-08-03, terminal output only. Aborted at **op #26 —
+`003-scope-boundaries` seed 0, `write`, 31.20s**. There is no
+`diagnostics/results/` artefact for this one; it is cited as terminal-reported
+rather than as a file, and should not be written up as though a JSON exists.
+
+**An inference about op #26, marked as inference.** Operation counts are
+structural — fixed by the scenario pack and step list, not by the provider. On
+that ordering, `003-scope-boundaries` seed 0 occupies ops 25-29, with op 25
+the `reset` and **op 26 the scenario's first write**. So the abort landed on
+the first write immediately after a reset, which is precisely the (f)
+condition. 31.20s is also just past the adapter's 30s write-convergence
+ceiling, consistent with a write that was swallowed rather than merely slow.
+
+For that reset to have deleted at all, the namespace must have held residue —
+which happens when a namespace name recurs, e.g. re-running the suite after an
+earlier aborted run. That fits, but it is **not measured**: the run predates
+the `[reset]` logging, so nothing recorded whether that reset took the delete
+path. The next run answers it directly.
+
+### 3. Decisions
+
+- **Citations added rather than left implicit.** Three files now traceable;
+  the `003` abort explicitly marked as having none.
+- **The previous entry's "at least 120s" phrasing corrected in this entry**,
+  not edited in place — the entry is merged and public.
+- **`_CONVERGE_TIMEOUT` still unchanged at 30s.** (g) bounds the window above
+  at 60s but says nothing about the typical case, and the sentinel's retry
+  procedure differs from the arm's. Size it from the series.
+
+### 4. FOR STRATEGY
+
+- **The harness-side story is now evidenced end to end**: `delete_all` reaps,
+  the window is bounded, `reset()` verifies rather than assumes. What remains
+  unproven is whether this mechanism *caused* the `012` and `003` aborts. The
+  op #26 inference is suggestive and cheap to confirm on the next run.
+- Unchanged: pinning `mem0ai` 2.0.14 for the regen, exact pins for extras,
+  whether #6017 changes the publication plan, `get_all` pagination.
+- **Nothing here is publishable yet** — one execution per arm, and the
+  provider-facing claim would need the stability re-runs first.
+
+### 5. Next
+
+1. Full 15 × 2 regen, capturing stderr. It now yields `empty_to_writable_s`
+   per deleting reset, which sizes the sentinel budget and confirms or kills
+   the op #26 inference.
+2. Stability re-runs of the arms before any of it is treated as settled.
+3. Founder ruling before any published text changes.
+
+External launch remains **HELD**.
+
+---
