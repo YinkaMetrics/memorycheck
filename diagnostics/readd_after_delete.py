@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 """Discriminating experiment: why is a re-added value not retrievable?
 
-STATUS. Arms (a)-(c) have RUN once — 2026-08-03, outside this environment,
-results `readd_after_delete_1785797173.json`. All three came back
-RE_ADD_VISIBLE. Arms (d)-(e) have NOT run: they were written after that run,
-and sandboxed sessions cannot reach `api.mem0.ai` (403 at CONNECT), which a
-credential alone does not fix — see CLAUDE.md, Environment notes.
+STATUS. All seven arms have now RUN, outside this environment (sandboxed
+sessions cannot reach `api.mem0.ai` — 403 at CONNECT; see CLAUDE.md,
+Environment notes). Results, one execution each:
 
-**The clean (a)-(c) sweep is not a clean bill of health.** It rules out
-content-level dedup and same-scope delete reaping, and leaves three
-behaviours indistinguishable: healthy, permanent cross-scope suppression, and
-transient cross-scope suppression. The last two are exactly what (d)-(e)
-exist to separate. No finding is claimed here and none should be quoted from
-this file. See HANDOFF.md.
+  (a)-(c)  RE_ADD_VISIBLE, 0s   `readd_after_delete_1785797173.json`
+  (d)-(e)  RE_ADD_VISIBLE       `readd_after_delete_1785800147.json`
+  (f)      WRITE_LOST, 120s     `readd_after_delete_1785828208.json`
+  (g)      WRITE_VISIBLE, 0s    (same file, after a 60s settle)
+
+**The result: (f) failed and (g) passed.** Every per-key arm passed; the one
+arm using `delete_all` — the delete `reset()` performs — lost its write, and
+a 60s settle cleared it. So the reaping window after a `delete_all` is REAL
+and BOUNDED: polling a namespace until empty is not sufficient, but the store
+does become writable again. `delete_all` stays usable as a reset primitive
+provided the caller verifies writability rather than trusting emptiness.
+
+Note what (f) does and does not measure. A write swallowed by the reaping
+`delete_all` is dead permanently — 120s of polling never resurrected it. That
+bounds nothing about the WINDOW; it says a lost write stays lost. (g) is what
+bounds the window, from above, at 60s. The lower bound is unmeasured, which
+is why `reset()` measures `empty_to_writable_s` on every deleting reset
+rather than assuming a figure. No finding is claimed here and none should be
+quoted from this file. See HANDOFF.md.
 
 STANDING CAVEAT — WHAT NO ARM CAN SHOW. Every arm here runs against an
 isolated, freshly-scoped, otherwise-idle system: a handful of operations
