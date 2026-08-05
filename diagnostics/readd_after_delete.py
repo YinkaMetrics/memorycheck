@@ -140,8 +140,6 @@ import sys
 import time
 from pathlib import Path
 
-import httpx
-
 POLL_INTERVAL = 5.0     # seconds between reads; each read costs one SEARCH unit
 CONFIRM_TIMEOUT = 120.0  # ceiling on waiting for a value to become retrievable
 EXTRA_SETTLE = 60.0     # arm (c): wait this long AFTER the delete reads empty
@@ -193,6 +191,10 @@ def resolve_api_key() -> str | None:
 def quota_remaining(api_key: str) -> int | None:
     """Read the SEARCH counter. Costs one SEARCH unit itself."""
     try:
+        # Keep the optional live-provider dependency off the dry-run and
+        # missing-provenance paths. Core CI installs only the base package.
+        import httpx
+
         r = httpx.post(
             "https://api.mem0.ai/v3/memories/",
             headers={"Authorization": f"Token {api_key}", "Content-Type": "application/json"},

@@ -3293,3 +3293,37 @@ explicit founder review.
 External launch remains **HELD pending founder review**.
 
 ---
+
+## 2026-08-05 — Follow-up PR #11 CI repair
+
+### 1. What shipped
+
+Draft PR #11 opened with `needs-founder-review`. Its first CI run failed only
+because the new subprocess tests exercised the diagnostic in the base install,
+while `httpx` was imported at module load despite being an optional Mem0-path
+dependency.
+
+### 2. Findings
+
+The provenance checks themselves behaved correctly locally. CI failed before
+reaching them with `ModuleNotFoundError: httpx`; no provider call was possible
+and no quota was spent.
+
+### 3. Decisions
+
+Move the optional `httpx` import into the live quota-probe function. Dry-run
+and fail-closed provenance validation must work in the base install, while an
+actual Mem0 run continues to use the dependency supplied by the Mem0 extra.
+
+### 4. FOR STRATEGY
+
+This is a packaging boundary correction only. It does not alter the quota
+reconciliation, provenance ruling, published metrics, or founder gate.
+
+### 5. Next
+
+Push the repair, confirm PR #11 CI passes, and leave the PR draft and unmerged.
+
+External launch remains **HELD pending founder review**.
+
+---
