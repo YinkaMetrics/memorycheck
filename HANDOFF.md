@@ -2917,9 +2917,12 @@ Implementation commit `b81bf20` addresses all five accepted review findings:
   every scenario and baseline namespace and stamped into JSON, Markdown and
   terminal report headers.
 
-The README is touched, so this is a gated-tier change. The branch must carry
-`needs-founder-review` and remain unmerged until the founder approves the
-public wording.
+The README is touched, so this is a gated-tier change. The implementation and
+handoff commits are pushed on `agent/fail-closed-release-gate`, but no PR was
+opened: the publication gate correctly stopped before that external action
+because the required live diagnostics and full regeneration have not run.
+When those are complete, the PR must carry `needs-founder-review` and remain
+unmerged until the founder approves the public wording.
 
 ### 2. Findings
 
@@ -2969,6 +2972,10 @@ stored values verbatim.
 - Publication remains held until the live diagnostics and full Mem0 15 x 2
   regeneration run in an environment with a credential. The existing choice
   of Mem0 SDK version/pin for that regeneration remains a founder call.
+- There is currently no PR and therefore no `needs-founder-review` label. PR
+  creation was attempted only after the branch push and was rejected by the
+  publication safeguard because the live prerequisites are incomplete; it
+  was not retried or bypassed.
 
 ### 5. Next
 
@@ -2977,8 +2984,8 @@ stored values verbatim.
    report artifacts with their `run_id`.
 2. Promote those results into this log and confirm the existing Mem0 metrics
    remain unchanged before altering any published evidence.
-3. Obtain founder approval on the `needs-founder-review` draft PR; only then
-   merge and publish to `main`.
+3. Open a draft PR, add `needs-founder-review`, and obtain founder approval;
+   only then merge and publish to `main`.
 
 External launch remains **HELD**.
 
