@@ -180,7 +180,7 @@ How the lifecycle maps onto Mem0:
 
 ### Result
 
-**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** (latest release at time of run, published 2026-07-25), executed **2026-07-27 15:58 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`. The hosted platform exposes no version or build identifier to clients, so the run date is the only pin available on the service itself. Three consecutive runs — two on 2.0.14, one on 2.0.11 — produced identical figures.
+**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** pinned for like-for-like reproduction, executed **2026-08-05 00:43 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`, run ID `1986edd5512147dca783bc513029b4f3`. The hosted platform exposes no version or build identifier to clients, so the SDK pin and run date are the available provenance. This completed regeneration produced figures identical to the 2026-07-27 published run and the intervening reproductions.
 
 ```
   current_fact_accuracy  100% (46/46)
@@ -193,7 +193,7 @@ How the lifecycle maps onto Mem0:
   GATE [fail on <= P2]: FAIL (10 blocking findings)
 ```
 
-**Provenance.** These figures were produced at commit `f230208`, before the adapter gained the write/delete convergence confirmation required by invariant 10. Per-scenario re-checks after that change returned identical results, and the same figures were reproduced across three runs including one on `mem0ai` 2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the attempt aborted partway through, for a reason not yet established — it is under investigation and we are not attributing it to Mem0 or to this harness until we know — and the account's search quota is exhausted until 2026-08-01, so it cannot be re-run before then. Tracked in [`HANDOFF.md`](HANDOFF.md).
+**Provenance.** The current evidence was regenerated from implementation commit `b81bf20`, after the adapter gained invariant-10 mutation confirmation, scope identifiers became lossless, and every invocation gained a unique namespace. All 170 operations completed. The metrics are unchanged from the earlier evidence: the harness corrections removed collision and race exposure without changing the Mem0 result. The separate reset diagnostics, including their intermittent namespace-delete behaviour, are tracked in [`HANDOFF.md`](HANDOFF.md).
 
 Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 

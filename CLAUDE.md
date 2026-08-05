@@ -99,13 +99,12 @@ Status: v0.1, built in public. `pytest -q` must stay green after every change.
 
 ## Environment notes
 
-**Live provider runs do not work from sandboxed sessions.** `api.mem0.ai` is
-refused by the sandbox egress policy — `connect_rejected: gateway answered 403
-to CONNECT` — so no Mem0 measurement can be taken there. **This is independent
-of credentials**: supplying `MEM0_API_KEY` does not help, because the
-connection never reaches Mem0. Any live provider run must happen in an
-environment with egress to that provider. Assume the same applies to Zep and
-to any future hosted adapter until measured otherwise.
+**Default sandbox networking does not reach live providers.** A normal command
+could not resolve `api.mem0.ai` on 2026-08-05. An explicitly approved escalated
+run did reach it and completed the Mem0 diagnostic plus full 15 × 2 suite.
+Treat live access as approval-dependent, not generally available, and verify
+both credentials and egress before planning a metered run. Assume the same
+applies to Zep and future hosted adapters until measured otherwise.
 
 **A TCP probe is not a valid reachability check.** Opening a socket to
 `api.mem0.ai:443` *succeeds* inside the sandbox because it connects to the
