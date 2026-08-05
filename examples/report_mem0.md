@@ -6,20 +6,21 @@
 # Reading this report
 
 **Run provenance.** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints),
-SDK `mem0ai` **2.0.14** — the latest release at time of run, published
-2026-07-25 — executed **2026-07-27 15:58 UTC**. The hosted platform exposes no
-version or build identifier to clients, so the run date is the only pin
-available on the service itself. Three consecutive runs (two on 2.0.14, one on
-2.0.11) produced identical figures.
+SDK `mem0ai` **2.0.14**, pinned for a like-for-like reproduction, executed
+**2026-08-05 00:43 UTC** from implementation commit `b81bf20`. Run ID:
+`1986edd5512147dca783bc513029b4f3`. The hosted platform exposes no version or
+build identifier to clients, so the SDK pin and run date are the available
+provenance.
 
-**Provenance.** These figures were produced at commit `f230208`, before the
-adapter gained the write/delete convergence confirmation required by invariant
-10. Per-scenario re-checks after that change returned identical results, and
-the same figures were reproduced across three runs including one on `mem0ai`
-2.0.11. A later 15 × 2 execution on 2026-08-05 is recorded internally as
-**reported, unverified** because it lacks its own contemporaneous SEARCH-quota
-before/after pair. Under invariant 11, that execution is not a source for this
-published report. See `HANDOFF.md`.
+**Provenance.** This completed 15 × 2 regeneration followed write/delete
+convergence confirmation, lossless scope identifiers and unique invocation
+namespaces. All 170 operations completed. It is **verified retrospectively by
+quota reconciliation; provenance was not self-recorded at execution time — the
+reason invariant 11 now exists.** The founder independently read Mem0's live
+SEARCH counter at **599** on 2026-08-05, against approximately **885** before
+the work. The 286-unit movement is consistent with 41 for the diagnostic, at
+least 182 for this full run, and at most 63 unallocated. Mem0's counter is
+outside this repository and cannot be written by it. See `HANDOFF.md`.
 
 **What the stale_reuse result is not.** It is not a report that Mem0 fails to
 overwrite corrected facts. That is documented, intended design — Mem0's README,
@@ -51,8 +52,10 @@ racing the pipeline rather than a result.
 
 # memorycheck evidence report
 
+- **Run ID:** `1986edd5512147dca783bc513029b4f3`
 - **Adapter:** `mem0`   **Judge:** `deterministic-v0`
-- **Scenarios:** 15   **Seeds:** 2   **Generated:** 2026-07-27T15:58:06+00:00
+- **Answering layer:** `quoting`
+- **Scenarios:** 15   **Seeds:** 2   **Generated:** 2026-08-05T00:43:20+00:00
 - **Gate (fail on ≤P2):** **FAIL** (10 blocking findings)
 
 | Check | Severity | Result |

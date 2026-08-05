@@ -12,8 +12,8 @@ never by reading documentation.
 Record answers in `HANDOFF.md` before the first scenario. An adapter keeps
 `unverified = True` until every item has an observed answer.
 
-For every live execution, create this provenance block before interpreting
-the result:
+For every live execution after adoption of invariant 11, create this
+provenance block before interpreting the result:
 
 ```text
 status: verified | reported, unverified
@@ -24,9 +24,15 @@ search_quota_after: <provider-reported integer>
 results_file: <exact filename>
 ```
 
-All four facts plus the filename are mandatory. If any is missing, the run is
+All four facts plus the filename are mandatory prospectively. If any is
+missing, the run is
 `reported, unverified`: log it internally, but do not change README, a
 published report, adapter verification status, or another gated claim from it.
+The 2026-08-05 Mem0 evidence is the recorded legacy exception: the founder
+independently read the live SEARCH counter at 599 against approximately 885
+before the work, verifying the run retrospectively by quota reconciliation.
+Its provenance was not self-recorded at execution time — the reason this rule
+now exists.
 
 ---
 
@@ -42,8 +48,8 @@ incomplete every time so far.
 - [ ] What is the request rate limit, and does confirmation polling threaten it?
 
 *Why:* Mem0 meters `SEARCH` (1,000/period) separately from `ADD`
-(10,000/period). The current full 15 × 2 path has a structural minimum of
-~182 SEARCH — 91 per seed — and extra convergence polls can raise it. Zep
+(10,000/period). The current full 15 × 2 path costs at least 182 SEARCH — a
+91-per-seed structural minimum — and extra convergence polls can raise it. Zep
 meters ingestion credits instead, so
 the same polling is free but a request-rate ceiling applies. Two providers,
 opposite constraints; neither was guessable.

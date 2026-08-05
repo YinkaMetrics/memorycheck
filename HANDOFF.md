@@ -3084,42 +3084,43 @@ External launch remains **HELD pending founder review**.
 
 ---
 
-## 2026-08-05 — PR #10 merged before provenance correction landed
+## 2026-08-05 — PR #10 merge and retrospective provenance review
 
 ### 1. What changed
 
 GitHub read-back at this handoff found PR #10 already merged at 01:09 UTC at
-head `a5aad4e`. The quota reconciliation and invariant-11 correction are in
-later commit `e270191`, pushed to the same branch after that merge, so they are
-not part of `main`.
+head `a5aad4e`. The quota reconciliation and invariant-11 process rule are in
+later commits on the follow-up branch.
 
 ### 2. Findings
 
 The merge was an external state change, not an action taken in this task. Its
-published 2026-08-05 evidence is exactly the promotion now classified as
-reported, unverified. Commit `e270191` withdraws that promotion and preserves
-the older verified published artifact; no new provider call was made.
+published 2026-08-05 evidence is **verified retrospectively by quota
+reconciliation; provenance was not self-recorded at execution time — the
+reason the rule now exists.** The founder independently read Mem0's live
+SEARCH counter at 599 on 2026-08-05, against approximately 885 before the
+work. Mem0 owns that counter outside the repository; repository code cannot
+write it. No new provider call was made during this documentation review.
 
 ### 3. Decisions
 
 - Do not rewrite, revert, or otherwise mutate the completed merge without
   explicit founder authority.
-- Open the isolated post-merge correction as a new draft PR from
-  `agent/fail-closed-release-gate`, labeled `needs-founder-review`.
+- Open the isolated post-merge documentation/process correction as a new draft
+  PR from `agent/fail-closed-release-gate`, labeled `needs-founder-review`.
 - Do not merge the follow-up PR automatically.
 
 ### 4. FOR STRATEGY
 
-Until the follow-up is reviewed and merged, `main` contains an evidence
-promotion that fails the newly adopted provenance rule. Treat that published
-2026-08-05 run as reported, unverified regardless of its current location in
-`main`.
+The 2026-08-05 evidence on `main` remains verified. The process gap is that
+the run did not self-record its provenance contemporaneously; apply invariant
+11 prospectively so the next run does not require retrospective reconciliation.
 
 ### 5. Next
 
 1. Open and label the follow-up draft PR.
-2. Confirm it contains only the provenance, accounting, cost correction and
-   evidence rollback.
+2. Confirm it retains the verified 2026 evidence and contains only provenance,
+   accounting, cost and process-rule corrections.
 3. Await explicit founder review; do not merge.
 
 External launch remains **HELD pending founder review**.
@@ -3135,21 +3136,25 @@ External launch remains **HELD pending founder review**.
   and the exact results filename.
 - A run missing any field is **reported, unverified**. It may be retained in
   this internal handoff, but it cannot update README, `examples/report_*`, an
-  adapter verification flag, or another gated claim.
+  adapter verification flag, or another gated claim. This applies to runs
+  executed after the rule's adoption.
 - `diagnostics/readd_after_delete.py` now refuses a live execution without the
   executor and environment, writes the initial provenance record before any
   mutation, and records the quota pair and result filename in its JSON output.
-- Withdrew the 2026-08-05 evidence promotion from README and
-  `examples/report_mem0.*`. The published artifact remains the 2026-07-27 run;
-  the later execution remains available internally as reported, unverified.
+- Retained the 2026-08-05 evidence in README and `examples/report_mem0.*`.
+  It is verified retrospectively by the founder's independent live SEARCH
+  counter reading; its provenance was not self-recorded at execution time.
 - Corrected the documented current Mem0 cost from the historical ~106 estimate
-  to a structural minimum of 91 SEARCH per seed, or 182 for 15 × 2, before
-  extra convergence polls.
+  to a structural minimum of 91 SEARCH per seed, or at least 182 for 15 × 2,
+  before extra convergence polls.
 
 ### 2. Quota accounting
 
-The founder-reported account movement is **885 → 599 = 286 SEARCH units**.
-The surviving artifacts support this reconciliation:
+The founder independently took a live Mem0 SEARCH counter reading of **599**
+on 2026-08-05, against approximately **885 before the work**: a movement of
+approximately 286 SEARCH units. Mem0's counter is external to this repository
+and cannot be written by repository code. The surviving artifacts support this
+reconciliation:
 
 | Bucket | SEARCH units | Evidence and limit |
 |---|---:|---|
@@ -3176,31 +3181,33 @@ invented as a specific cause.
 **Seven-arm diagnostic**
 
 ```text
-status: reported, unverified
+status: verified retrospectively by quota reconciliation; provenance not self-recorded at execution time — the reason the rule now exists
 executed_by: Codex (OpenAI), on the founder's instruction
 environment: Codex desktop on macOS; local writable clone; explicitly approved live network access
-search_quota_before: no run-start value recorded; first provider checkpoint was 822 after the initial probe
-search_quota_after: not contemporaneously recorded as a run-level value
+search_quota_before: approximately 885 before the combined work, recorded by the founder
+search_quota_after: 599, independently read live from Mem0 by the founder on 2026-08-05
 results_file: diagnostics/results/readd_after_delete_1785890141.json
 ```
 
 **Full 15 × 2 execution**
 
 ```text
-status: reported, unverified
+status: verified retrospectively by quota reconciliation; provenance not self-recorded at execution time — the reason the rule now exists
 executed_by: Codex (OpenAI), on the founder's instruction
 environment: Codex desktop on macOS; local writable clone; explicitly approved live network access
-search_quota_before: not contemporaneously recorded for this run
-search_quota_after: not contemporaneously recorded for this run; 599 is only the founder-reported final account value across the combined work
+search_quota_before: approximately 885 before the combined work, recorded by the founder
+search_quota_after: 599, independently read live from Mem0 by the founder on 2026-08-05
 results_file: diagnostics/results/full_mem0_20260805.json (with matching .md and .log)
 ```
 
-Both executions are retained for investigation, but neither qualifies to
-change a gated file under invariant 11.
+The combined live work is verified retrospectively by the independent provider
+counter reconciliation. It qualifies as evidence; the missing self-recorded
+run-level pair is a process deficiency and the reason invariant 11 now applies
+prospectively.
 
 ### 4. FOR STRATEGY
 
-- The 63-unit maximum remainder is closed as **unallocated, unverified**, not
+- The 63-unit maximum remainder is closed as **unallocated**, not
   silently attributed to repeat, sentinel, or development runs that the
   artifacts do not prove. Do not spend more quota merely to reconstruct it.
 - The next live run must begin only after the five-field provenance record is
@@ -3209,15 +3216,15 @@ change a gated file under invariant 11.
   and spend without a follow-up reconstruction.
 - Existing Mem0 findings are unaffected: the scenario-pack identifiers do not
   slug-collide, the execution used `seeds=2`, there was no concurrency, and
-  the Mem0 answering layer is quoting. This is an evidence-provenance hold,
-  not a change to the previously published metric values.
-- README/report edits remain gated-tier and PR #10 must retain
+  the Mem0 answering layer is quoting. The evidence remains verified and the
+  metric values remain unchanged.
+- README/report edits remain gated-tier and PR #11 must retain
   `needs-founder-review`; do not merge without explicit founder approval.
 
 ### 5. Next
 
 1. Run offline validation only; do not spend additional Mem0 quota.
-2. Push the provenance rule and accounting to draft PR #10.
+2. Push the corrected provenance rule and accounting to draft PR #11.
 3. Confirm the PR stays draft, labeled `needs-founder-review`, and unmerged.
 
 External launch remains **HELD pending founder review**.
@@ -3272,18 +3279,20 @@ PR #10 merged at head `a5aad4e`. The later provenance correction is pushed at
 ### 2. Findings
 
 No new provider measurement and no additional quota spend. The detailed
-286-unit reconciliation and both reported-unverified provenance blocks are in
-the entries above.
+286-unit reconciliation and retrospective-verification provenance blocks are
+in the entries above.
 
 ### 3. Decisions
 
-Preserve the completed merge and route `e270191` through a separate draft PR
-with `needs-founder-review`; do not merge it automatically.
+Preserve the completed merge and route the prospective provenance rule and
+customer-facing cost correction through a separate draft PR with
+`needs-founder-review`; do not merge it automatically.
 
 ### 4. FOR STRATEGY
 
-Until the follow-up correction is approved, treat the 2026-08-05 live evidence
-currently present on `main` as reported, unverified.
+Treat the 2026-08-05 live evidence on `main` as **verified retrospectively by
+quota reconciliation; provenance not self-recorded at execution time — the
+reason the rule now exists.**
 
 ### 5. Next
 
@@ -3323,6 +3332,49 @@ reconciliation, provenance ruling, published metrics, or founder gate.
 ### 5. Next
 
 Push the repair, confirm PR #11 CI passes, and leave the PR draft and unmerged.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Founder confirms retrospective verification
+
+### 1. What changed
+
+Corrected HANDOFF, README, the published Mem0 report framing and PR #11 to
+retain the 2026-08-05 evidence as verified. Removed the proposed evidence
+rollback. Invariant 11 remains as a prospective self-recording requirement.
+
+### 2. Findings
+
+The evidence is **verified retrospectively by quota reconciliation; provenance
+not self-recorded at execution time — the reason the rule now exists.** The
+founder independently read Mem0's live SEARCH quota at **599** on 2026-08-05,
+against approximately **885 before the work**. That approximately 286-unit
+movement is consistent with 41 for the seven-arm diagnostic, at least 182 for
+the full 15 × 2, and at most 63 unallocated. Mem0's counter is external to the
+repository and cannot be written by repository code.
+
+### 3. Decisions
+
+- Keep the regenerated 2026-08-05 report and run ID
+  `1986edd5512147dca783bc513029b4f3` as the current evidence.
+- State the customer-facing full-run cost as **at least 182 SEARCH** under
+  invariant 10, not the historical ~106 estimate.
+- Require future live runs to self-record executor, environment, quota pair
+  and exact results filename; retrospective verification is not the default
+  operating procedure.
+
+### 4. FOR STRATEGY
+
+This correction changes provenance framing, not provider findings. Existing
+Mem0 results remain unaffected: identifiers do not slug-collide, seeds=2, no
+concurrency, and a quoting answering layer.
+
+### 5. Next
+
+Update draft PR #11, rerun offline validation and CI, retain
+`needs-founder-review`, and do not merge without explicit approval.
 
 External launch remains **HELD pending founder review**.
 

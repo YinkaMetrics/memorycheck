@@ -19,9 +19,10 @@ failure is therefore intermittent, not a deterministic consequence of every
 `delete_all`. The earlier loss remains valid evidence that it can happen; the
 clean rerun does not erase it. The full 15 x 2 regeneration immediately after
 this diagnostic completed all 170 operations under a unique invocation
-namespace. That run did not record its own quota before/after pair, so under
-invariant 11 it is reported, unverified and cannot update gated evidence; see
-HANDOFF.md.
+namespace. It is verified retrospectively by quota reconciliation: the founder
+independently read Mem0's live SEARCH counter at 599 on 2026-08-05, against
+approximately 885 before the work. Provenance was not self-recorded at
+execution time — the reason invariant 11 now exists. See HANDOFF.md.
 
 **The combined result: (f) failed once and passed once; (g) passed twice.**
 Every per-key arm passed. A write immediately after `delete_all` can be lost,
