@@ -3084,6 +3084,48 @@ External launch remains **HELD pending founder review**.
 
 ---
 
+## 2026-08-05 — PR #10 merged before provenance correction landed
+
+### 1. What changed
+
+GitHub read-back at this handoff found PR #10 already merged at 01:09 UTC at
+head `a5aad4e`. The quota reconciliation and invariant-11 correction are in
+later commit `e270191`, pushed to the same branch after that merge, so they are
+not part of `main`.
+
+### 2. Findings
+
+The merge was an external state change, not an action taken in this task. Its
+published 2026-08-05 evidence is exactly the promotion now classified as
+reported, unverified. Commit `e270191` withdraws that promotion and preserves
+the older verified published artifact; no new provider call was made.
+
+### 3. Decisions
+
+- Do not rewrite, revert, or otherwise mutate the completed merge without
+  explicit founder authority.
+- Open the isolated post-merge correction as a new draft PR from
+  `agent/fail-closed-release-gate`, labeled `needs-founder-review`.
+- Do not merge the follow-up PR automatically.
+
+### 4. FOR STRATEGY
+
+Until the follow-up is reviewed and merged, `main` contains an evidence
+promotion that fails the newly adopted provenance rule. Treat that published
+2026-08-05 run as reported, unverified regardless of its current location in
+`main`.
+
+### 5. Next
+
+1. Open and label the follow-up draft PR.
+2. Confirm it contains only the provenance, accounting, cost correction and
+   evidence rollback.
+3. Await explicit founder review; do not merge.
+
+External launch remains **HELD pending founder review**.
+
+---
+
 ## 2026-08-05 — Live-run quota reconciliation and provenance gate
 
 ### 1. What changed
@@ -3215,6 +3257,38 @@ handoff point.
 1. Let CI finish and address any failure before approval.
 2. Founder reviews PR #10 and records approval or requested changes.
 3. Merge only after explicit approval; external launch otherwise stays held.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Current publication state after PR #10 merge
+
+### 1. What shipped
+
+PR #10 merged at head `a5aad4e`. The later provenance correction is pushed at
+`e270191` and is not in `main`.
+
+### 2. Findings
+
+No new provider measurement and no additional quota spend. The detailed
+286-unit reconciliation and both reported-unverified provenance blocks are in
+the entries above.
+
+### 3. Decisions
+
+Preserve the completed merge and route `e270191` through a separate draft PR
+with `needs-founder-review`; do not merge it automatically.
+
+### 4. FOR STRATEGY
+
+Until the follow-up correction is approved, treat the 2026-08-05 live evidence
+currently present on `main` as reported, unverified.
+
+### 5. Next
+
+Open the isolated follow-up draft, confirm its scope and gate, then await
+explicit founder review.
 
 External launch remains **HELD pending founder review**.
 
