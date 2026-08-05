@@ -248,8 +248,8 @@ def test_detects_a_paraphrasing_answering_layer(serve):
     # A paraphrasing agent is legitimate, so it must not fail the contract.
     assert report.ok, [c.title for c in report.failed]
     fix = next(c.fix for c in report.checks if c.id == "answering_layer")
-    assert "--fail-on p1" in fix
     assert "missing_current_fact" in fix
+    assert "INCONCLUSIVE" in fix
 
 
 def test_paraphrasing_without_retrieved_is_indistinguishable_from_a_lost_write(serve):
@@ -329,18 +329,27 @@ def test_paraphrasing_degrades_missing_current_fact_to_not_tested(serve):
     assert mcf, "the scenario has must_use checks"
     assert all(f.status == NOT_TESTED for f in mcf), "must not FAIL a paraphraser"
     assert all(f.detail == PARAPHRASE_NOT_TESTED for f in mcf)
+    absence_checks = [
+        f for f in findings
+        if f.check in {"scope_leakage", "deletion_residue", "stale_reuse", "expiry_leak"}
+    ]
+    assert absence_checks, "the scenario has stale/deleted opportunities"
+    assert all(f.status == NOT_TESTED for f in absence_checks)
+    assert all(f.detail == PARAPHRASE_NOT_TESTED for f in absence_checks)
 
     summary = build_summary(findings, [], adapter_name="http:x",
                             judge_name="deterministic-v0", seeds=1,
-                            scenario_count=1, fail_on="p2", answering_layer=layer)
+                            scenario_count=1, fail_on="p2", run_id=suite["run_id"],
+                            answering_layer=layer)
     assert summary["answering_layer"] == PARAPHRASING
     assert summary["limitations"] == PARAPHRASE_LIMITATIONS
-    assert summary["gate"]["verdict"] == "PASS", "no false blocking findings"
+    assert summary["gate"]["verdict"] == "INCONCLUSIVE"
+    assert "paraphrasing" in " ".join(summary["gate"]["inconclusive_reasons"])
 
     md = to_markdown(summary)
     assert "LIMITATIONS OF THIS RUN" in md
     assert "forgetting everything" in md
-    assert "weaker evidence" in md
+    assert "INCONCLUSIVE" in md
     # prominent: above the metrics table, not a footnote
     assert md.index("LIMITATIONS OF THIS RUN") < md.index("| Check |")
 
@@ -349,7 +358,7 @@ def test_quoting_runs_carry_no_limitations_block(serve):
     from memorycheck.report import build_summary, to_markdown
 
     summary = build_summary([], [], adapter_name="x", judge_name="j", seeds=1,
-                            scenario_count=1, fail_on="p2",
+                            scenario_count=1, fail_on="p2", run_id="quoting-test",
                             answering_layer=QUOTING)
     assert summary["limitations"] == []
     assert "LIMITATIONS" not in to_markdown(summary)
@@ -361,3 +370,5 @@ def test_doctor_warn_recommends_the_store_first_path(serve):
     assert "RECOMMENDED" in fix
     assert "point /query at" in fix
     assert "only once the semantic judge is calibrated" in fix
+    assert "INCONCLUSIVE" in fix
+    assert "non-zero exit" in fix

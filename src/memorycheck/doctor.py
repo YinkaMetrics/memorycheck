@@ -118,6 +118,24 @@ def _wait_visible(
 
 
 def run_doctor(adapter: MemoryAdapter, timeout: float = 30.0) -> DoctorReport:
+    """Run conformance diagnostics without hiding their failure mechanism.
+
+    The HTTP runner normally confirms every mutation before returning. Doctor
+    already owns the equivalent polling and needs to observe endpoint shape,
+    convergence and soft-delete failures separately, so it temporarily
+    disables that adapter-level guard and restores it on exit.
+    """
+    confirmation = getattr(adapter, "confirm_mutations", None)
+    if confirmation is not None:
+        adapter.confirm_mutations = False
+    try:
+        return _run_doctor(adapter, timeout)
+    finally:
+        if confirmation is not None:
+            adapter.confirm_mutations = confirmation
+
+
+def _run_doctor(adapter: MemoryAdapter, timeout: float = 30.0) -> DoctorReport:
     report = DoctorReport()
     add = report.checks.append
     prompt = f"What is the {_KEY} for this user?"
@@ -172,6 +190,12 @@ def run_doctor(adapter: MemoryAdapter, timeout: float = 30.0) -> DoctorReport:
 
     # ---- C4 write is readable, and how fast ----------------------------
     seen, waited = _wait_visible(adapter, _A, _V1, prompt, timeout)
+    # The HTTP adapter now confirms its own write before returning, so the
+    # doctor's follow-up read is immediate. Preserve the actual write→read
+    # latency measured inside that adapter rather than reporting a false zero.
+    adapter_waited = getattr(adapter, "last_write_convergence_seconds", None)
+    if adapter_waited is not None:
+        waited = max(waited, adapter_waited)
     if seen:
         report.convergence_seconds = waited
         report.suggested_timeout = max(5.0, round(waited * 4 + 2, 1))
@@ -199,12 +223,12 @@ def run_doctor(adapter: MemoryAdapter, timeout: float = 30.0) -> DoctorReport:
             "re-run. That is the configuration the full lifecycle is designed "
             "for, and it exercises every check. Wiring your full agent into "
             "/query is supported only once the semantic judge is calibrated. "
-            "If you must run as-is, use --fail-on p1 and read the LIMITATIONS "
-            "block on the report: missing_current_fact is reported NOT TESTED "
-            "rather than FAIL, memory_utility_delta is unavailable so the run "
-            "cannot detect a system that passes by forgetting everything, and "
-            "while P1 findings stay trustworthy, a clean P1 result is weaker "
-            "evidence because a paraphrased leak would also go undetected.",
+            "If you must run as-is, read the LIMITATIONS block on the report: "
+            "exact matched violations still fail, but clean lifecycle absence "
+            "checks and missing_current_fact report NOT TESTED because a "
+            "paraphrased forbidden value could go undetected. The utility "
+            "delta is unavailable and the gate is INCONCLUSIVE with a "
+            "non-zero exit.",
         ))
     else:
         report.answering_layer = UNKNOWN

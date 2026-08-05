@@ -12,5 +12,9 @@ supports_ttl: false
 
 timeout_seconds: 30
 
+# Maximum time memorycheck waits for /query to reflect an accepted write or
+# delete. This is separate from the per-request network timeout above.
+convergence_timeout_seconds: 30
+
 # Optional: name an env var holding a bearer token, sent as Authorization.
 # auth_token_env: MEMORYCHECK_HTTP_TOKEN

@@ -5,7 +5,8 @@
   memorycheck run scenarios/ --adapter reference:naive --report-md out/report.md
   memorycheck list-adapters
 
-`run` exits non-zero when the gate fails — wire it straight into CI.
+`run` exits non-zero when the gate fails or is inconclusive — wire it straight
+into CI.
 """
 
 from __future__ import annotations
@@ -22,6 +23,13 @@ from .oracle import evaluate
 from .report import build_summary, print_summary, write_reports
 from .runner import RunProgress, run_suite
 from .scenario import load_dir
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
@@ -117,6 +125,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         unverified=getattr(adapter, "unverified", False),
         unverified_note=getattr(adapter, "unverified_note", ""),
         answering_layer=answering_layer,
+        run_id=suite["run_id"],
     )
     print_summary(summary)
     write_reports(summary, args.report_json, args.report_md)
@@ -124,7 +133,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"  evidence (json): {args.report_json}")
     if args.report_md:
         print(f"  evidence (md):   {args.report_md}")
-    return 1 if summary["gate"]["verdict"] == "FAIL" else 0
+    return 0 if summary["gate"]["verdict"] == "PASS" else 1
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -162,7 +171,8 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("scenarios", help="scenario file or directory")
     p_run.add_argument("--adapter", default="reference:strict", help="adapter spec")
     p_run.add_argument("--judge", default="deterministic", help="usage judge")
-    p_run.add_argument("--seeds", type=int, default=1, help="repeat runs per scenario")
+    p_run.add_argument("--seeds", type=_positive_int, default=1,
+                       help="repeat runs per scenario (must be >= 1)")
     p_run.add_argument("--no-baseline", action="store_true",
                        help="skip the no-memory baseline (utility delta reports NOT TESTED)")
     p_run.add_argument("--fail-on", choices=["p1", "p2"], default="p2",

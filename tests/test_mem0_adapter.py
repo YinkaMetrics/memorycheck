@@ -116,6 +116,14 @@ def test_identifiers_isolate_users_tenants_and_runs(offline_adapter):
     assert a._user_id(ALICE) != first_run, "runs must not collide"
 
 
+def test_identifier_encoding_keeps_punctuation_variants_distinct(offline_adapter):
+    a = offline_adapter
+    a.reset("scope-collision")
+    tenant_ids = ["tenant/a", "tenant-a", "tenant.a", "tenant a"]
+    mapped = {a._user_id(Scope(tenant, "alice")) for tenant in tenant_ids}
+    assert len(mapped) == len(tenant_ids)
+
+
 def test_write_then_query_returns_the_value(offline_adapter):
     a = offline_adapter
     a.reset("ns")

@@ -8,8 +8,7 @@ proves whether each operation changed the agent's *behaviour* — not whether
 the store returned 200. Provider-neutral, local-first, sold on trust:
 the honesty model below is the product's differentiator, not decoration.
 
-Status: v0.1, 12/12 tests green, built in public. `pytest -q` must stay green
-after every change.
+Status: v0.1, built in public. `pytest -q` must stay green after every change.
 
 ## Architecture (src/memorycheck/)
 
@@ -21,7 +20,8 @@ after every change.
 - `runner.py` — executes steps against an adapter in lockstep with the ledger.
   Replays rescopes from ledger ground truth (adapters need no read API).
 - `oracle.py` — findings + severities. Invariants enforced on EVERY query.
-- `report.py` — metrics, scorecard, JSON/MD evidence, gate verdict/exit code.
+- `report.py` — metrics, scorecard, JSON/MD evidence, and
+  PASS/FAIL/INCONCLUSIVE gate verdict/exit code.
 - `adapters/` — `base.py` (contract + `AdapterError`), `reference.py`
   (strict/naive/leaky demo), `http.py` (customer shim), `mem0.py` (hosted
   Mem0), `zep.py` (hosted Zep, unverified live), `NullAdapter` (no-memory
@@ -42,8 +42,10 @@ after every change.
    correctness; never grade from its `retrieved` metadata — grade from the
    answer via the judge against the ledger.
 3. **NOT_TESTED over silent pass.** Anything an adapter can't express (e.g.
-   TTL) or a check with zero opportunities reports NOT_TESTED. A broken or
-   partial adapter must never produce a PASS.
+   TTL) or a check with zero opportunities reports NOT_TESTED. An unverified
+   adapter, a paraphrasing layer whose clean absences cannot be evidenced, or
+   a run where every metric is NOT_TESTED yields INCONCLUSIVE and exits
+   non-zero. A broken, partial or unmeasurable adapter must never produce PASS.
 4. **No LLM judge until calibrated.** The semantic judge ships only after the
    protocol: ≥200 human-labelled examples, ≥90% precision on release-blocking
    classes. Until then `judge=llm` raises NotImplementedError. Do not wire a
@@ -78,9 +80,12 @@ after every change.
     Assume every provider is eventually consistent until measured otherwise.
 
     Note the boundary: adapters confirm **their own writes and deletes** have
-    landed. They must never poll a *query* until a value the ledger expects
-    shows up — that would launder a genuine `missing_current_fact` into a
-    pass. Converge the store, then read once and report what comes back.
+    landed, then the runner performs a separate scored query. Native adapters
+    use their raw store read surface. The HTTP pilot has no read API beyond
+    the customer shim's `/query`, so it polls that endpoint for the exact
+    just-mutated value (or its absence) with a bounded timeout. That poll is
+    mutation confirmation only; the oracle never grades it. Non-convergence
+    aborts rather than being laundered into PASS or scored as a provider bug.
 
 ## Conventions
 
@@ -239,10 +244,11 @@ memorycheck run scenarios --adapter reference:strict  # demo: gate PASSes
 4. **LLM judge calibration — moved ahead of further adapters**
    (ruling 2026-07-28). It is now the constraint on what the product can
    claim, not a later refinement: with a paraphrasing answering layer,
-   `missing_current_fact` is NOT_TESTED, the utility delta is unavailable,
-   and a clean P1 is weaker evidence — so a customer running their real
-   agent gets a materially narrower evidence pack. More adapters do not
-   widen that; the judge does.
+   exact matched violations still FAIL, but clean lifecycle absence checks
+   and `missing_current_fact` are NOT_TESTED, the utility delta is unavailable,
+   and the gate is INCONCLUSIVE — so a customer running their real agent gets
+   a materially narrower evidence pack. More adapters do not widen that; the
+   judge does.
 
    **The 200 labelled examples do not require customer data.** Paraphrased
    variants of the existing pack's answers, labelled by hand, are a valid

@@ -84,9 +84,11 @@ never landed. When detected:
   judge cannot verify a paraphrase either way;
 - **`memory_utility_delta` is unavailable**, so the run cannot detect a system
   that passes by forgetting everything;
-- **P1 findings stay trustworthy, but a clean P1 result is weaker evidence** —
-  a paraphrased leaked value would also go undetected;
-- use `--fail-on p1`, and read the LIMITATIONS block printed on the report.
+- exact matched violations still report FAIL, but clean scope, deletion,
+  stale and expiry absence checks report **NOT TESTED** because a paraphrased
+  forbidden value could go undetected;
+- the overall gate is **INCONCLUSIVE** and exits non-zero. Read the LIMITATIONS
+  block rather than treating the run as release evidence.
 
 Every report is stamped with the answering layer, so a rate can never be read
 out of context.
@@ -135,8 +137,8 @@ memorycheck run scenarios --adapter http:examples/shim/config.yaml --seeds 2
 ```
 
 15 scenarios covering correction, deletion, delete-then-re-add, multi-key
-interference, expiry and scope boundaries. Exits non-zero when the gate fails,
-so it drops straight into CI:
+interference, expiry and scope boundaries. Exits non-zero when the gate fails
+or is inconclusive, so it drops straight into CI:
 
 ```yaml
 - name: Memory lifecycle gate
@@ -180,5 +182,6 @@ retrieval ignores. That is exactly the P1 this tool exists to catch, so the
 check is working; the fix is in your retrieval filter.
 
 **Convergence takes seconds.** Normal for an eventually consistent store.
-`doctor` prints a suggested timeout; the harness polls for each write rather
-than assuming it landed.
+`doctor` prints a suggested timeout; set `convergence_timeout_seconds` in the
+adapter config. The runner polls `/query` after every write and delete and
+aborts if the expected transition does not arrive within that bound.

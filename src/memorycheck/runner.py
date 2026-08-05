@@ -9,6 +9,7 @@ own record of the moved value, so adapters need no read API.
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from .adapters.base import MemoryAdapter, NullAdapter
@@ -38,6 +39,7 @@ class ScenarioRun:
     seed: int
     observations: list[QueryObservation] = field(default_factory=list)
     ttl_not_supported: bool = False
+    run_id: str = ""
 
 
 @dataclass
@@ -143,13 +145,18 @@ def run_scenario(
     judge: Judge,
     seed: int = 0,
     progress: RunProgress | None = None,
+    run_id: str | None = None,
 ) -> ScenarioRun:
+    run_id = run_id or uuid.uuid4().hex
     ledger = GroundTruthLedger()
     started = time.perf_counter()
     ops_before = len(progress.ops) if progress else 0
     _timed(progress, scenario.id, seed, -1, "reset",
-           adapter.reset, namespace=f"memorycheck::{scenario.id}::{seed}")
-    run = ScenarioRun(scenario=scenario, adapter_name=adapter.name, seed=seed)
+           adapter.reset,
+           namespace=f"memorycheck::{run_id}::{scenario.id}::{seed}")
+    run = ScenarioRun(
+        scenario=scenario, adapter_name=adapter.name, seed=seed, run_id=run_id,
+    )
     if scenario.uses_ttl and not adapter.supports_ttl:
         run.ttl_not_supported = True
 
@@ -250,6 +257,7 @@ def run_suite(
     seeds: int = 1,
     baseline: bool = True,
     progress: RunProgress | None = None,
+    run_id: str | None = None,
 ) -> dict:
     """Run every scenario across N seeds, plus (optionally) the no-memory
     baseline used for the Memory Utility Delta. Returns raw runs for the
@@ -259,16 +267,21 @@ def run_suite(
     suite runs — the caller keeps it if the suite raises, which is the whole
     point. The baseline is deliberately NOT instrumented: it never touches the
     provider, so its timings would flatten the curve with in-process noise."""
+    if seeds < 1:
+        raise ValueError("seeds must be >= 1")
+    run_id = run_id or uuid.uuid4().hex
     runs: list[ScenarioRun] = []
     for scenario in scenarios:
         for seed in range(seeds):
             runs.append(run_scenario(scenario, adapter, judge, seed=seed,
-                                     progress=progress))
+                                     progress=progress, run_id=run_id))
 
     baseline_runs: list[ScenarioRun] = []
     if baseline:
         null_adapter = NullAdapter()
         for scenario in scenarios:
-            baseline_runs.append(run_scenario(scenario, null_adapter, judge, seed=0))
+            baseline_runs.append(
+                run_scenario(scenario, null_adapter, judge, seed=0, run_id=run_id)
+            )
 
-    return {"runs": runs, "baseline_runs": baseline_runs}
+    return {"runs": runs, "baseline_runs": baseline_runs, "run_id": run_id}

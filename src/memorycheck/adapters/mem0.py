@@ -16,8 +16,9 @@ Design (fixed for v0):
   key's memories again (Mem0 exposes no key concept of its own).
 * Scope maps onto Mem0 identifiers. ``tenant_id``/``user_id`` are folded into
   a single Mem0 ``user_id``; every write is also tagged with an ``app_id``
-  derived from the run namespace, so ``reset()`` can wipe an entire run in one
-  ``delete_all``. Ids are prefixed with the namespace so runs never collide.
+  derived from a losslessly encoded namespace containing a unique invocation
+  id, so ``reset()`` can wipe one scenario run in one ``delete_all`` without
+  merging punctuation-distinct scopes or colliding with another invocation.
 * ``supports_ttl = False``. Mem0 expiry is wall-clock; ours is logical time,
   so it is genuinely inexpressible here and expiry checks must report
   NOT_TESTED — the honesty model, not a gap to paper over.
@@ -30,13 +31,14 @@ depends on it.
 from __future__ import annotations
 
 import os
-import re
 import sys
 import time
 import uuid
 
 from ..ledger import Scope
-from .base import AdapterError, MemoryAdapter, QueryResult, poll_until
+from .base import (
+    AdapterError, MemoryAdapter, QueryResult, encode_identifier, poll_until,
+)
 
 # Cap on how many memories a scoped query pulls back. Scenarios hold a handful
 # of facts per scope; this is a safety ceiling, not a relevance filter — we do
@@ -60,11 +62,6 @@ _SENTINEL = "mc_reset_sentinel"
 # try again, not to wait longer. The retry loop overall stays bounded by
 # _CONVERGE_TIMEOUT.
 _SENTINEL_ATTEMPT_TIMEOUT = 5.0
-
-
-def _slug(text: str) -> str:
-    """Collapse arbitrary text to a Mem0-safe identifier fragment."""
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_") or "x"
 
 
 def _call(what: str, fn, *args, **kwargs):
@@ -113,12 +110,15 @@ class Mem0Adapter(MemoryAdapter):
 
     def _app_id(self) -> str:
         """One id per run namespace — the handle reset() wipes."""
-        return f"mc_{_slug(self._namespace)}"
+        return f"mc_{encode_identifier(self._namespace)}"
 
     def _user_id(self, scope: Scope) -> str:
         """Fold namespace + tenant + user into a single Mem0 identifier, so a
         different run, tenant, or user can never see this scope's memories."""
-        return f"{self._app_id()}__{_slug(scope.tenant_id)}__{_slug(scope.user_id)}"
+        return (
+            f"{self._app_id()}__{encode_identifier(scope.tenant_id)}"
+            f"__{encode_identifier(scope.user_id)}"
+        )
 
     # ------------------------------------------------------------- lifecycle
 
