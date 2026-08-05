@@ -92,7 +92,13 @@ def test_scope_maps_to_a_namespace_tuple(adapter):
     adapter.reset("ns")
     assert adapter._ns(ALICE) != adapter._ns(BOB)
     assert adapter._ns(ALICE) != adapter._ns(OTHER_TENANT)
-    assert adapter._ns(ALICE)[1:] == ("acme", "alice")
+
+
+def test_identifier_encoding_keeps_punctuation_variants_distinct(adapter):
+    adapter.reset("scope-collision")
+    tenant_ids = ["tenant/a", "tenant-a", "tenant.a", "tenant a"]
+    mapped = {adapter._ns(Scope(tenant, "alice")) for tenant in tenant_ids}
+    assert len(mapped) == len(tenant_ids)
 
 
 def test_write_then_query_returns_the_value(adapter):

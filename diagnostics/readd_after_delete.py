@@ -1,21 +1,31 @@
 #!/usr/bin/env python3
 """Discriminating experiment: why is a re-added value not retrievable?
 
-STATUS. All seven arms have now RUN, outside this environment (sandboxed
-sessions cannot reach `api.mem0.ai` — 403 at CONNECT; see CLAUDE.md,
-Environment notes). Results, one execution each:
+STATUS. All seven arms have run twice across the recorded executions. Original
+results:
 
   (a)-(c)  RE_ADD_VISIBLE, 0s   `readd_after_delete_1785797173.json`
   (d)-(e)  RE_ADD_VISIBLE       `readd_after_delete_1785800147.json`
   (f)      WRITE_LOST, 120s     `readd_after_delete_1785828208.json`
   (g)      WRITE_VISIBLE, 0s    (same file, after a 60s settle)
 
-**The result: (f) failed and (g) passed.** Every per-key arm passed; the one
-arm using `delete_all` — the delete `reset()` performs — lost its write, and
-a 60s settle cleared it. So the reaping window after a `delete_all` is REAL
-and BOUNDED: polling a namespace until empty is not sufficient, but the store
-does become writable again. `delete_all` stays usable as a reset primitive
-provided the caller verifies writability rather than trusting emptiness.
+Second full seven-arm execution, 2026-08-05:
+
+  (a)-(e)  RE_ADD_VISIBLE       `readd_after_delete_1785890141.json`
+  (f)-(g)  WRITE_VISIBLE, 0s    (same file)
+
+Arm (f) changed from WRITE_LOST to WRITE_VISIBLE. The namespace-wide reaping
+failure is therefore intermittent, not a deterministic consequence of every
+`delete_all`. The earlier loss remains valid evidence that it can happen; the
+clean rerun does not erase it. The full 15 x 2 regeneration immediately after
+this diagnostic completed all 170 operations under a unique invocation
+namespace; see HANDOFF.md.
+
+**The combined result: (f) failed once and passed once; (g) passed twice.**
+Every per-key arm passed. A write immediately after `delete_all` can be lost,
+but the second execution did not reproduce the loss. Polling a namespace until
+empty is not sufficient evidence of writability; `reset()` must verify that a
+new write lands rather than assume every delete has the same timing.
 
 Note what (f) does and does not measure. A write swallowed by the reaping
 `delete_all` is dead permanently — 120s of polling never resurrected it. That

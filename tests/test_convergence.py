@@ -12,10 +12,19 @@ import time
 
 import pytest
 
-from memorycheck.adapters.base import AdapterError, poll_until
+from memorycheck.adapters.base import (
+    AdapterError, decode_identifier, encode_identifier, poll_until,
+)
 from memorycheck.ledger import Scope
 
 ALICE = Scope("acme", "alice")
+
+
+@pytest.mark.parametrize(
+    "value", ["", "tenant/a", "tenant-a", "tenant.a", "tenant a", "租户/α"]
+)
+def test_identifier_encoding_is_reversible(value):
+    assert decode_identifier(encode_identifier(value)) == value
 
 
 def test_already_converged_costs_no_wait():

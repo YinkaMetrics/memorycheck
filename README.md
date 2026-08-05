@@ -133,6 +133,12 @@ memorycheck run scenarios --adapter http:memorycheck_http.yaml --seeds 2
 
 The wire contract is also documented in [`src/memorycheck/adapters/http.py`](src/memorycheck/adapters/http.py). Set `supports_ttl: false` honestly: expiry checks report **NOT TESTED** rather than silently passing.
 
+After every accepted write and delete, the HTTP adapter polls `/query` until
+the exact mutation is visible (or absent) before the runner continues. The
+wait is bounded by `convergence_timeout_seconds`; non-convergence aborts the
+run instead of racing the next scenario query. This is the same convergence
+guarantee checked by `doctor`.
+
 The adapter contract is deliberately small (`write / delete / query / reset`) and needs no read API.
 
 ### Which adapter should you use?
@@ -150,7 +156,7 @@ They do two different jobs, and the right choice is usually the shim.
 
 Native adapters also carry our decisions about how to drive each provider, and those decisions change the result: the Mem0 adapter stores values verbatim, and the Zep adapter honours Zep's own liveness metadata. Read the per-adapter notes before quoting anything from one.
 
-A native adapter that has not been fully verified against its provider declares `unverified`, prints a warning to stderr before running, and stamps every report it produces. Do not quote figures from one.
+A native adapter that has not been fully verified against its provider declares `unverified`, prints a warning to stderr before running, stamps every report it produces, and makes the gate **INCONCLUSIVE** with a non-zero exit. Do not quote figures from one.
 
 ## Mem0
 
@@ -166,7 +172,7 @@ How the lifecycle maps onto Mem0:
 
 | memorycheck | Mem0 |
 |---|---|
-| scope (`tenant_id`/`user_id`) | folded into one `user_id`, prefixed with the run namespace so runs never collide |
+| scope (`tenant_id`/`user_id`) | losslessly encoded into one `user_id`; the namespace includes a unique per-invocation `run_id`, so punctuation-distinct scopes and separate runs cannot merge |
 | `write` | `add("<key>: <value>", metadata={"key": …}, infer=False)` |
 | `delete` | find that scope's memories carrying the metadata key, delete each by id |
 | `reset` | `delete_all` over the namespace's `app_id` |
@@ -174,7 +180,7 @@ How the lifecycle maps onto Mem0:
 
 ### Result
 
-**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** (latest release at time of run, published 2026-07-25), executed **2026-07-27 15:58 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`. The hosted platform exposes no version or build identifier to clients, so the run date is the only pin available on the service itself. Three consecutive runs — two on 2.0.14, one on 2.0.11 — produced identical figures.
+**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** pinned for like-for-like reproduction, executed **2026-08-05 00:43 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`, run ID `1986edd5512147dca783bc513029b4f3`. The hosted platform exposes no version or build identifier to clients, so the SDK pin and run date are the available provenance. This completed regeneration produced figures identical to the 2026-07-27 published run and the intervening reproductions.
 
 ```
   current_fact_accuracy  100% (46/46)
@@ -187,7 +193,7 @@ How the lifecycle maps onto Mem0:
   GATE [fail on <= P2]: FAIL (10 blocking findings)
 ```
 
-**Provenance.** These figures were produced at commit `f230208`, before the adapter gained the write/delete convergence confirmation required by invariant 10. Per-scenario re-checks after that change returned identical results, and the same figures were reproduced across three runs including one on `mem0ai` 2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the attempt aborted partway through, for a reason not yet established — it is under investigation and we are not attributing it to Mem0 or to this harness until we know — and the account's search quota is exhausted until 2026-08-01, so it cannot be re-run before then. Tracked in [`HANDOFF.md`](HANDOFF.md).
+**Provenance.** The current evidence was regenerated from implementation commit `b81bf20`, after the adapter gained invariant-10 mutation confirmation, scope identifiers became lossless, and every invocation gained a unique namespace. All 170 operations completed. The metrics are unchanged from the earlier evidence: the harness corrections removed collision and race exposure without changing the Mem0 result. The separate reset diagnostics, including their intermittent namespace-delete behaviour, are tracked in [`HANDOFF.md`](HANDOFF.md).
 
 Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 
@@ -249,7 +255,7 @@ Two honest caveats:
 
 - **`infer=False` is deliberate.** Mem0's default `infer=True` sends writes through an extraction LLM that rewrites them, which would make the deterministic judge unable to match the exact value. Storing verbatim keeps the measurement about retrieval, not extraction — but it does mean this benchmark exercises Mem0-as-store, not Mem0's inference pipeline.
 - **Expiry reports NOT TESTED, by design.** Mem0's expiry is wall-clock; memorycheck's time is logical. Rather than fake a pass with `sleep`, the adapter declares the capability absent and the report says so.
-- **Mem0 applies writes and deletes asynchronously.** A write issued immediately after a `delete_all` can be swallowed by the in-flight delete — we measured 6/14 writes lost that way, versus 0/10 with no preceding delete. Early runs of this adapter blamed Mem0 for "losing" current facts the harness had itself just deleted. Every mutation now confirms its own effect by polling before returning, and a mutation that never lands aborts the run with its measured latency rather than being scored against the provider. Worth knowing if you write your own adapter: a false FAIL costs a gate its credibility as surely as a false PASS, and **the adapter confirms only its own writes — it never polls a query until an expected value appears**, which would launder a real miss into a pass.
+- **Mem0 applies writes and deletes asynchronously.** A write issued immediately after a `delete_all` can be swallowed by the in-flight delete — we measured 6/14 writes lost that way, versus 0/10 with no preceding delete. Early runs of this adapter blamed Mem0 for "losing" current facts the harness had itself just deleted. Every mutation now confirms its own effect by polling before returning, and a mutation that never lands aborts the run with its measured latency rather than being scored against the provider. Native adapters confirm mutations through their raw store surface. The HTTP pilot has only the customer-supplied `/query` read surface, so it polls that endpoint for the exact just-mutated value, then the runner performs the separate query that is scored. A false FAIL costs a gate its credibility as surely as a false PASS.
 
 ## LangGraph store
 
@@ -331,7 +337,8 @@ Two decisions worth arguing with:
 
 ## CI gate
 
-`memorycheck run` exits non-zero when the gate fails:
+`memorycheck run` exits non-zero when the gate is **FAIL** or
+**INCONCLUSIVE**:
 
 ```yaml
 - name: Memory lifecycle gate
@@ -344,10 +351,10 @@ Evidence artifacts: `--report-json` and `--report-md` (see [`examples/`](example
 
 An assurance tool that overclaims destroys its own value, so:
 
-- **PASS / FAIL / NOT TESTED** — a check with no opportunities, or one the adapter can't express (e.g. TTL), is reported NOT TESTED, never passed.
-- **The judge is deterministic in v0** (normalised value matching): high precision, known recall limit — it will not catch *paraphrased* reliance on a fact. A semantic LLM judge slots in behind the same interface, but ships only after a calibration protocol: ≥200 human-labelled examples with ≥90% precision on release-blocking classes. Until then the harness will not block your release on a model's opinion.
+- **PASS / FAIL / INCONCLUSIVE are gate verdicts; NOT TESTED is a check state.** A check with no opportunities, or one the adapter cannot express (e.g. TTL), is NOT TESTED. If every metric is NOT TESTED, the gate is INCONCLUSIVE and exits non-zero.
+- **The judge is deterministic in v0** (normalised value matching): high precision, known recall limit — it cannot evidence that a paraphrased value is absent. Under a paraphrasing answering layer, clean lifecycle absence checks are NOT TESTED and the gate is INCONCLUSIVE, never PASS. A semantic LLM judge slots in behind the same interface, but ships only after a calibration protocol: ≥200 human-labelled examples with ≥90% precision on release-blocking classes. Until then the harness will not turn an unmeasurable run green.
 - **Deletion evidence covers accessible retrieval and behavioural influence.** It is not a claim that a provider physically erased every backup, and it is not legal advice.
-- Multi-seed runs (`--seeds N`) surface flaky checks explicitly in the report rather than averaging them away.
+- Multi-seed runs (`--seeds N`, minimum 1) surface flaky checks explicitly in the report rather than averaging them away. Every invocation gets a unique `run_id`, recorded in its report and included in every namespace.
 
 ## Status
 

@@ -147,6 +147,17 @@ def _evaluate_query(
                     obs.seed,
                 )
             )
+        elif paraphrasing:
+            # Exact-match judging can prove a violation when the literal value
+            # appears, but it cannot prove absence when this answering layer is
+            # known to paraphrase. A clean-looking answer is therefore
+            # unmeasurable, not a PASS — especially for the P1 classes.
+            findings.append(
+                Finding(
+                    obs.scenario_id, obs.step_index, check, SEVERITY[check],
+                    NOT_TESTED, PARAPHRASE_NOT_TESTED, obs.seed,
+                )
+            )
         else:
             findings.append(
                 Finding(

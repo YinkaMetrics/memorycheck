@@ -2188,6 +2188,7 @@ uninterpretable against the (a) baseline. Say if you want it the other way.
 External launch remains **HELD**.
 
 ---
+
 ## 2026-08-03 — Arms (a)-(c) executed: clean sweep, and it settles less than it looks
 
 **Corrects the entry above.** That entry states "Arms (a)-(c) have never been
@@ -2685,6 +2686,7 @@ worth knowing.
 External launch remains **HELD**.
 
 ---
+
 ## 2026-08-04 — Founder approval recorded; arm (f) FAILED, the mechanism is real
 
 ### 1. What shipped
@@ -2891,5 +2893,231 @@ path. The next run answers it directly.
 3. Founder ruling before any published text changes.
 
 External launch remains **HELD**.
+
+---
+
+## 2026-08-05 — External review fixes: the release gate now fails closed
+
+### 1. What shipped
+
+Implementation commit `b81bf20` addresses all five accepted review findings:
+
+- `INCONCLUSIVE` is a gate verdict distinct from PASS and check-level
+  NOT_TESTED. Paraphrasing clean-absence checks, unverified adapters, and runs
+  where every metric is NOT_TESTED cannot go green; the CLI exits non-zero.
+- `--seeds` rejects values below 1 at argument parsing, and the library guard
+  enforces the same floor.
+- the HTTP pilot confirms accepted writes and deletes by polling `/query` for
+  the exact transition with a bounded timeout. `doctor` retains its own
+  diagnostic polling so it can still distinguish bad response shape,
+  non-convergence and soft-delete residue.
+- Mem0 and LangGraph identifiers use reversible URL-safe base64 encoding.
+  `tenant/a`, `tenant-a`, `tenant.a` and `tenant a` map to distinct namespaces.
+- every suite invocation generates one unique `run_id`; it is included in
+  every scenario and baseline namespace and stamped into JSON, Markdown and
+  terminal report headers.
+
+The README is touched, so this is a gated-tier change. The implementation and
+handoff commits are pushed on `agent/fail-closed-release-gate`, but no PR was
+opened: the publication gate correctly stopped before that external action
+because the required live diagnostics and full regeneration have not run.
+When those are complete, the PR must carry `needs-founder-review` and remain
+unmerged until the founder approves the public wording.
+
+### 2. Findings
+
+No live provider behaviour was observed in this session.
+
+Local verification after the fixes:
+
+- all 15 scenarios validate with 0 warnings;
+- offline suite: 87 passed, 4 credential-gated tests skipped;
+- full local strict regeneration: 15 scenarios x 2 seeds, PASS, 0 blocking
+  findings, report `run_id=4acd8fda77aa4c068928f63347bd92a3`;
+- naive control: FAIL with 16 blocking findings at one seed, exit 1;
+- `--seeds 0`: rejected by argparse, exit 2;
+- eventually-consistent HTTP test: delayed write and delete both converge
+  before the runner advances; timeout aborts instead of producing a score.
+
+The requested live diagnostics and full Mem0 regeneration did **not** run.
+`MEM0_API_KEY` is absent from this environment. A read-only reachability probe
+outside the sandbox returned HTTP 200, so the blocker is the missing
+credential, not current endpoint reachability. No published evidence artifact
+was regenerated and no provider figure was changed.
+
+The existing Mem0 findings are unaffected by these harness corrections: the
+scenario-pack identifiers used in those runs do not slug-collide, the runs
+used `seeds=2`, there was no concurrency, and the Mem0 answering layer quotes
+stored values verbatim.
+
+### 3. Decisions
+
+- Exact violations still take precedence: a paraphrasing run with a literal
+  matched violation is FAIL; otherwise absence cannot be evidenced and the
+  gate is INCONCLUSIVE.
+- HTTP convergence may inspect the shim's `retrieved` field to confirm a
+  mutation arrived, including under paraphrase. The oracle remains unchanged
+  on invariant 2 and grades only the separate scenario answer.
+- Identifier encoding is centralised in `adapters/base.py` so native adapters
+  cannot drift back to mutually incompatible slug rules.
+- A fresh `run_id` is created at `run_suite`, not per scenario, so one report
+  and all of its namespaces share the same invocation identity.
+
+### 4. FOR STRATEGY
+
+- Founder review is required for the README changes: the public honesty model
+  now names INCONCLUSIVE, states that paraphrasing and unverified adapters exit
+  non-zero, corrects Mem0 namespace isolation, and documents HTTP `/query`
+  convergence.
+- Publication remains held until the live diagnostics and full Mem0 15 x 2
+  regeneration run in an environment with a credential. The existing choice
+  of Mem0 SDK version/pin for that regeneration remains a founder call.
+- There is currently no PR and therefore no `needs-founder-review` label. PR
+  creation was attempted only after the branch push and was rejected by the
+  publication safeguard because the live prerequisites are incomplete; it
+  was not retried or bypassed.
+
+### 5. Next
+
+1. Supply `MEM0_API_KEY` in an egress-capable environment and rerun the
+   diagnostics plus the full Mem0 15 x 2 regeneration, capturing stderr and
+   report artifacts with their `run_id`.
+2. Promote those results into this log and confirm the existing Mem0 metrics
+   remain unchanged before altering any published evidence.
+3. Open a draft PR, add `needs-founder-review`, and obtain founder approval;
+   only then merge and publish to `main`.
+
+External launch remains **HELD**.
+
+---
+
+## 2026-08-05 — Live diagnostics and full Mem0 regeneration completed
+
+This entry supersedes the execution blocker in the preceding entry. The key
+was already present in the Mem0 CLI config; the fresh clone simply did not
+carry the gitignored credential file.
+
+### 1. What shipped
+
+Commit `d9da6de` promotes the completed live evidence:
+
+- `examples/report_mem0.{json,md}` now carry the regenerated report, including
+  run ID and answering-layer metadata;
+- README provenance no longer says regeneration is pending;
+- the diagnostic STATUS block records the second seven-arm execution and the
+  intermittent result; and
+- environment guidance now distinguishes default sandbox networking from an
+  explicitly approved live-provider run.
+
+Implementation remains `b81bf20`; `d25fa1b` recorded the temporary publication
+hold before the configured credential was located.
+
+### 2. Findings
+
+**Seven-arm diagnostic.** Live Mem0, SDK 2.0.14, result file
+`diagnostics/results/readd_after_delete_1785890141.json`:
+
+| Arms | Result | SEARCH units per arm |
+|---|---|---|
+| (a)-(c), same-scope per-key delete | RE_ADD_VISIBLE | 5 each |
+| (d)-(e), cross-scope per-key delete | RE_ADD_VISIBLE | 5 each |
+| (f), namespace `delete_all`, immediate write | WRITE_VISIBLE | 4 |
+| (g), namespace `delete_all`, 60s settle | WRITE_VISIBLE | 4 |
+
+Arm (f) previously returned WRITE_LOST and now returned WRITE_VISIBLE. The
+namespace-wide post-delete loss is therefore intermittent, not deterministic.
+The clean rerun does not erase the earlier observed loss; it rules out framing
+it as the outcome of every `delete_all`.
+
+**Full regeneration.** Live Mem0, SDK 2.0.14, implementation `b81bf20`, 15
+scenarios x 2 seeds, 170 operations, run ID
+`1986edd5512147dca783bc513029b4f3`. Raw files:
+`diagnostics/results/full_mem0_20260805.{json,md,log}`; promoted evidence:
+`examples/report_mem0.{json,md}`.
+
+| Check | Result |
+|---|---|
+| current_fact_accuracy | 100% (46/46) |
+| stale_reuse | 100% (10/10) — FAIL |
+| scope_leakage | 0% (0/22) |
+| deletion_residue | 0% (0/18) |
+| expiry_leak | NOT TESTED |
+| memory_utility_delta | +1.00 |
+
+Gate: **FAIL**, 10 blocking P2 findings. Seed stability: stable. Answering
+layer: quoting. Both seeds of the previously aborting scenario 012 completed;
+the largest recorded operation latency in the full-run progress output was
+2.32s, below the 30s convergence ceiling.
+
+The existing Mem0 findings are unchanged, as predicted: pack identifiers do
+not slug-collide, the run used `seeds=2`, there was no concurrency, and the
+Mem0 answering layer quotes exact stored values. Unique invocation namespaces
+prevented this run from colliding with residue from an earlier invocation.
+
+### 3. Decisions
+
+- Pinned `mem0ai` 2.0.14 for like-for-like reproduction rather than silently
+  changing the provider client and the harness in one measurement.
+- Promoted the regenerated evidence because its metrics exactly match the
+  published figures; no provider verdict or severity changed.
+- Kept the earlier failed namespace diagnostic and the new passing execution
+  side by side. Reporting only the clean rerun would hide intermittency;
+  reporting only the loss would overstate determinism.
+
+### 4. FOR STRATEGY
+
+- The frequency and trigger for intermittent post-`delete_all` write loss are
+  still unmeasured. Unique per-invocation namespaces remove that path from a
+  normal fresh run; the sentinel remains the fail-closed guard when a reset
+  actually encounters residue.
+- README and published evidence are gated-tier changes. The PR requires
+  `needs-founder-review` and must remain unmerged pending explicit approval.
+
+### 5. Next
+
+1. Push the complete branch.
+2. Open a draft PR labeled `needs-founder-review`, stating the exact public
+   claim and evidence changes.
+3. Do not merge until founder approval is recorded.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Draft PR #10 opened; founder gate active
+
+### 1. What shipped
+
+Commits through `c112102` are pushed on
+`agent/fail-closed-release-gate`. Draft PR
+`https://github.com/YinkaMetrics/memorycheck/pull/10` targets `main` and carries
+`needs-founder-review`.
+
+### 2. Findings
+
+No new provider measurement. The live diagnostic and full regeneration are
+recorded in the preceding entry. GitHub read-back confirmed the PR is OPEN,
+DRAFT and unmerged; both CI jobs started and were still in progress at the
+handoff point.
+
+### 3. Decisions
+
+- Stopped at the gated publication boundary. Opening a draft for founder
+  review is authorised; merging the README and published evidence changes is
+  not.
+
+### 4. FOR STRATEGY
+
+- Founder approval is required before merge. Review should focus on the new
+  INCONCLUSIVE public contract, corrected namespace claim, intermittent reset
+  wording, and regenerated Mem0 provenance.
+
+### 5. Next
+
+1. Let CI finish and address any failure before approval.
+2. Founder reviews PR #10 and records approval or requested changes.
+3. Merge only after explicit approval; external launch otherwise stays held.
+
+External launch remains **HELD pending founder review**.
 
 ---

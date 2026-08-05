@@ -43,7 +43,7 @@ import tempfile
 from pathlib import Path
 
 from ..ledger import Scope
-from .base import AdapterError, MemoryAdapter, QueryResult
+from .base import AdapterError, MemoryAdapter, QueryResult, encode_identifier
 
 # `search` defaults to limit=10 and `list_namespaces` to limit=100 — both
 # silently truncate. Ceilings here are safety bounds, not relevance filters:
@@ -55,10 +55,6 @@ _MAX_NS_PAGES = 100
 
 def _tokens(text: str) -> set[str]:
     return set(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
-
-
-def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
 
 
 class LangGraphAdapter(MemoryAdapter):
@@ -98,7 +94,11 @@ class LangGraphAdapter(MemoryAdapter):
     # --------------------------------------------------------------- scoping
 
     def _ns(self, scope: Scope) -> tuple[str, ...]:
-        return (self._root, _slug(scope.tenant_id), _slug(scope.user_id))
+        return (
+            self._root,
+            encode_identifier(scope.tenant_id),
+            encode_identifier(scope.user_id),
+        )
 
     def _namespaces(self) -> list[tuple[str, ...]]:
         """Every namespace under this run's root, following pagination.
@@ -129,7 +129,7 @@ class LangGraphAdapter(MemoryAdapter):
         Scoped by construction: SqliteStore persists, so clearing the store
         globally would delete rows belonging to whoever owns the file.
         """
-        self._root = f"memorycheck-{_slug(namespace or 'default')}"
+        self._root = f"memorycheck-{encode_identifier(namespace or 'default')}"
         for ns in self._namespaces():
             for item in self._store.search(ns, limit=_SEARCH_LIMIT):
                 self._store.delete(ns, item.key)

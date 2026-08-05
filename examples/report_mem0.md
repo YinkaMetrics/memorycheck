@@ -6,21 +6,19 @@
 # Reading this report
 
 **Run provenance.** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints),
-SDK `mem0ai` **2.0.14** — the latest release at time of run, published
-2026-07-25 — executed **2026-07-27 15:58 UTC**. The hosted platform exposes no
-version or build identifier to clients, so the run date is the only pin
-available on the service itself. Three consecutive runs (two on 2.0.14, one on
-2.0.11) produced identical figures.
+SDK `mem0ai` **2.0.14**, pinned for a like-for-like reproduction, executed
+**2026-08-05 00:43 UTC** from implementation commit `b81bf20`. Run ID:
+`1986edd5512147dca783bc513029b4f3`. The hosted platform exposes no version or
+build identifier to clients, so the SDK pin and run date are the available
+provenance.
 
-**Provenance.** These figures were produced at commit `f230208`, before the
-adapter gained the write/delete convergence confirmation required by invariant
-10. Per-scenario re-checks after that change returned identical results, and
-the same figures were reproduced across three runs including one on `mem0ai`
-2.0.11. A full 15 × 2 regeneration at the current commit is **pending**: the
-attempt aborted partway through for a reason not yet established — under
-investigation, and not attributed to Mem0 or to this harness until we know —
-and the account's search quota is exhausted until 2026-08-01, so it cannot be
-re-run before then. See `HANDOFF.md`.
+**Provenance.** This is a completed 15 × 2 regeneration after write/delete
+convergence confirmation, lossless scope identifiers and unique invocation
+namespaces were added. All 170 operations completed. Its figures are identical
+to the 2026-07-27 published run and the intervening reproductions: current-fact
+accuracy 46/46, stale reuse 10/10, scope leakage 0/22 and deletion residue
+0/18. See `HANDOFF.md` for the separate reset diagnostic history; this fresh
+run namespace did not need to delete residue from an earlier invocation.
 
 **What the stale_reuse result is not.** It is not a report that Mem0 fails to
 overwrite corrected facts. That is documented, intended design — Mem0's README,
@@ -52,8 +50,10 @@ racing the pipeline rather than a result.
 
 # memorycheck evidence report
 
+- **Run ID:** `1986edd5512147dca783bc513029b4f3`
 - **Adapter:** `mem0`   **Judge:** `deterministic-v0`
-- **Scenarios:** 15   **Seeds:** 2   **Generated:** 2026-07-27T15:58:06+00:00
+- **Answering layer:** `quoting`
+- **Scenarios:** 15   **Seeds:** 2   **Generated:** 2026-08-05T00:43:20+00:00
 - **Gate (fail on ≤P2):** **FAIL** (10 blocking findings)
 
 | Check | Severity | Result |

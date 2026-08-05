@@ -32,8 +32,9 @@ from .oracle import (
 PARAPHRASE_LIMITATIONS = [
     "memory_utility_delta is unavailable, so this run CANNOT detect a system "
     "passing by forgetting everything.",
-    "P1 findings remain trustworthy, but a clean P1 result is weaker evidence: "
-    "a paraphrased leaked value would not be detected either.",
+    "The deterministic judge cannot evidence absence under paraphrase. Clean "
+    "scope, deletion, stale and expiry checks report NOT TESTED, and the gate "
+    "is INCONCLUSIVE rather than PASS.",
     "For a full evidence pack, point /query at the store or a quoting "
     "answering layer. That is the supported configuration.",
 ]
@@ -41,6 +42,7 @@ PARAPHRASE_LIMITATIONS = [
 RATE_CHECKS = ("scope_leakage", "deletion_residue", "stale_reuse", "expiry_leak")
 
 _SEV_RANK = {"p1": 1, "p2": 2}
+INCONCLUSIVE = "INCONCLUSIVE"
 
 
 def _rate(findings: list[Finding], check: str) -> dict:
@@ -63,6 +65,7 @@ def build_summary(
     seeds: int,
     scenario_count: int,
     fail_on: str,
+    run_id: str,
     unverified: bool = False,
     unverified_note: str = "",
     answering_layer: str = "unknown",
@@ -82,6 +85,26 @@ def build_summary(
         for f in findings
         if f.status == FAIL and _SEV_RANK[f.severity.lower()] <= threshold
     ]
+    inconclusive_reasons: list[str] = []
+    if unverified:
+        inconclusive_reasons.append(
+            "adapter has not been verified against its live provider"
+        )
+    if answering_layer == PARAPHRASING:
+        inconclusive_reasons.append(
+            "deterministic judge cannot evidence absence under paraphrasing"
+        )
+    all_metrics_not_tested = (
+        cfa is None
+        and utility_delta is None
+        and all(entry["rate"] is None for entry in checks.values())
+    )
+    if all_metrics_not_tested:
+        inconclusive_reasons.append("every metric is NOT TESTED")
+
+    gate_verdict = (
+        FAIL if blocking else INCONCLUSIVE if inconclusive_reasons else PASS
+    )
     # Seed stability: same (scenario, step, check) failing in some seeds only.
     by_key: dict[tuple, set[str]] = {}
     for f in findings:
@@ -91,6 +114,7 @@ def build_summary(
     return {
         "tool": {"name": "memorycheck", "version": __version__},
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "run_id": run_id,
         "adapter": adapter_name,
         # Travels with the evidence: a figure produced by an adapter that has
         # never touched its provider must not be quotable as a measurement,
@@ -113,8 +137,9 @@ def build_summary(
         "scenarios": scenario_count,
         "gate": {
             "fail_on": fail_on.upper(),
-            "verdict": FAIL if blocking else PASS,
+            "verdict": gate_verdict,
             "blocking_findings": len(blocking),
+            "inconclusive_reasons": inconclusive_reasons,
         },
         "metrics": {
             "current_fact_accuracy": {"satisfied": ok, "total": total, "value": cfa},
@@ -171,16 +196,17 @@ def to_markdown(summary: dict) -> str:
         lines += [f"> {i}. {text}" for i, text in enumerate(summary["limitations"], 1)]
         lines += [
             ">",
-            "> `missing_current_fact` is reported NOT TESTED throughout rather "
-            "than FAIL, because the deterministic judge matches exact values "
-            "and cannot verify a paraphrase either way.",
+            "> Clean lifecycle checks are reported NOT TESTED rather than PASS, "
+            "because the deterministic judge matches exact values and cannot "
+            "evidence absence under paraphrase. The gate is INCONCLUSIVE.",
             "",
         ]
     lines += [
+        f"- **Run ID:** `{summary.get('run_id', 'unknown')}`",
         f"- **Adapter:** `{summary['adapter']}`   **Judge:** `{summary['judge']}`",
         f"- **Answering layer:** `{summary.get('answering_layer', 'unknown')}`"
-        + ("  — values are paraphrased, so `missing_current_fact` reports false "
-           "failures here; the P1 checks remain sound. Prefer `--fail-on p1`."
+        + ("  — values are paraphrased, so absence cannot be evidenced and the "
+           "gate is INCONCLUSIVE."
            if summary.get("answering_layer") == "paraphrasing" else ""),
         f"- **Scenarios:** {summary['scenarios']}   **Seeds:** {summary['seeds']}   "
         f"**Generated:** {summary['generated_at']}",
@@ -198,6 +224,10 @@ def to_markdown(summary: dict) -> str:
         f"| Memory utility delta | — | {ud_str} |",
         "",
     ]
+    if summary["gate"].get("inconclusive_reasons"):
+        lines += ["## Why the gate is inconclusive", ""]
+        lines += [f"- {reason}" for reason in summary["gate"]["inconclusive_reasons"]]
+        lines.append("")
     failures = [f for f in summary["findings"] if f["status"] == FAIL]
     skipped = [f for f in summary["findings"] if f["status"] == NOT_TESTED]
     if failures:
@@ -236,6 +266,7 @@ def print_summary(summary: dict) -> None:
     m = summary["metrics"]
     print(f"\nmemorycheck {__version__} — adapter={summary['adapter']} "
           f"judge={summary['judge']} scenarios={summary['scenarios']} seeds={summary['seeds']}")
+    print(f"  run_id={summary.get('run_id', 'unknown')}")
     cfa = m["current_fact_accuracy"]
     rows = [
         ("current_fact_accuracy",
@@ -258,6 +289,8 @@ def print_summary(summary: dict) -> None:
             print(f"     {i}. {text}")
     print(f"\n  GATE [fail on <= {summary['gate']['fail_on']}]: {summary['gate']['verdict']} "
           f"({summary['gate']['blocking_findings']} blocking findings)")
+    for reason in summary["gate"].get("inconclusive_reasons", []):
+        print(f"  inconclusive: {reason}")
     if summary.get("adapter_unverified"):
         print("  ** UNVERIFIED ADAPTER — never run against the live provider; "
               "do not quote these results. **")

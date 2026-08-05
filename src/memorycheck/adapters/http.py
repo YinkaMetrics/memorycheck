@@ -18,6 +18,7 @@ Config YAML (pass as  --adapter http:path/to/config.yaml):
   base_url: "http://localhost:8808"
   supports_ttl: false        # be honest; expiry checks report NOT_TESTED
   timeout_seconds: 30
+  convergence_timeout_seconds: 30
   auth_token_env: MEMORYCHECK_HTTP_TOKEN   # optional bearer token env var
 """
 
@@ -32,7 +33,7 @@ from pathlib import Path
 import yaml
 
 from ..ledger import Scope
-from .base import AdapterError, MemoryAdapter, QueryResult
+from .base import AdapterError, MemoryAdapter, QueryResult, poll_until
 
 
 class HTTPAdapterError(AdapterError):
@@ -47,7 +48,20 @@ class HTTPAdapter(MemoryAdapter):
         self.base_url: str = cfg["base_url"].rstrip("/")
         self.supports_ttl = bool(cfg.get("supports_ttl", False))
         self.timeout = float(cfg.get("timeout_seconds", 30))
+        self.convergence_timeout = float(
+            cfg.get("convergence_timeout_seconds", self.timeout)
+        )
+        self.convergence_interval = float(
+            cfg.get("convergence_interval_seconds", 0.25)
+        )
         self._token = os.environ.get(cfg.get("auth_token_env", ""), "")
+        self._known_values: dict[tuple[str, str, str], set[str]] = {}
+        # Doctor performs its own diagnostic polling so it can distinguish a
+        # bad endpoint contract from slow convergence. Normal scenario runs
+        # leave this enabled and cannot race accepted mutations.
+        self.confirm_mutations = True
+        self.last_write_convergence_seconds: float | None = None
+        self.last_delete_convergence_seconds: float | None = None
         self.name = f"http:{self.base_url}"
 
     # ------------------------------------------------------------- plumbing
@@ -80,15 +94,52 @@ class HTTPAdapter(MemoryAdapter):
 
     def reset(self, namespace: str) -> None:
         self._post("reset", {"namespace": namespace})
+        self._known_values.clear()
 
     def write(self, scope: Scope, key: str, value: str, ttl_steps: int | None = None) -> None:
         payload = {**self._ids(scope), "key": key, "value": value}
         if ttl_steps is not None:
             payload["ttl_steps"] = ttl_steps
         self._post("write", payload)
+        if not self.confirm_mutations:
+            self._known_values.setdefault(self._known_key(scope, key), set()).add(value)
+            return
+        converged, waited = poll_until(
+            lambda: self._query_has_value(scope, key, value),
+            timeout=self.convergence_timeout,
+            interval=self.convergence_interval,
+        )
+        self.last_write_convergence_seconds = waited
+        if not converged:
+            raise HTTPAdapterError(
+                f"POST /write accepted {key!r}, but /query did not expose "
+                f"{value!r} within {waited:.1f}s; refusing to let the scenario "
+                "race an unconfirmed write"
+            )
+        self._known_values.setdefault(self._known_key(scope, key), set()).add(value)
 
     def delete(self, scope: Scope, key: str) -> None:
+        known = set(self._known_values.get(self._known_key(scope, key), set()))
         self._post("delete", {**self._ids(scope), "key": key})
+        if not self.confirm_mutations:
+            self._known_values.pop(self._known_key(scope, key), None)
+            return
+        if not known:
+            self.last_delete_convergence_seconds = 0.0
+            return
+        converged, waited = poll_until(
+            lambda: not any(self._query_has_value(scope, key, value) for value in known),
+            timeout=self.convergence_timeout,
+            interval=self.convergence_interval,
+        )
+        self.last_delete_convergence_seconds = waited
+        if not converged:
+            raise HTTPAdapterError(
+                f"POST /delete accepted {key!r}, but /query still exposed a "
+                f"known value after {waited:.1f}s; refusing to score the "
+                "provider on a delete that has not converged"
+            )
+        self._known_values.pop(self._known_key(scope, key), None)
 
     def advance_time(self, steps: int) -> None:
         if self.supports_ttl:
@@ -110,3 +161,19 @@ class HTTPAdapter(MemoryAdapter):
                 f"query 'answer' must be a string, got {type(answer).__name__}"
             )
         return QueryResult(answer=answer, retrieved=list(data.get("retrieved", [])))
+
+    @staticmethod
+    def _known_key(scope: Scope, key: str) -> tuple[str, str, str]:
+        return (scope.tenant_id, scope.user_id, key)
+
+    def _query_has_value(self, scope: Scope, key: str, value: str) -> bool:
+        """Confirm a mutation through the same /query surface the pack reads.
+
+        Raw `retrieved` hits may establish convergence even when the answering
+        layer paraphrases. They are evidence for mutation arrival only; the
+        oracle still grades exclusively from the answer.
+        """
+        result = self.query(scope, f"What is the {key} for this user?")
+        if value in result.answer:
+            return True
+        return value in " ".join(str(row) for row in result.retrieved)

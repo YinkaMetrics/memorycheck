@@ -12,12 +12,36 @@ expiry checks are reported NOT_TESTED for that run, never silently passed.
 
 from __future__ import annotations
 
+import base64
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..ledger import Scope
+
+
+_ID_PREFIX = "b64_"
+
+
+def encode_identifier(value: str) -> str:
+    """Losslessly map an arbitrary identifier to a provider-safe fragment.
+
+    URL-safe base64 uses only ASCII letters, digits, ``-`` and ``_``. The
+    prefix also makes the empty string unambiguous. Unlike slugification this
+    never merges punctuation variants such as ``tenant/a`` and ``tenant-a``.
+    """
+    encoded = base64.urlsafe_b64encode(str(value).encode("utf-8")).decode("ascii")
+    return _ID_PREFIX + encoded.rstrip("=")
+
+
+def decode_identifier(value: str) -> str:
+    """Reverse :func:`encode_identifier`; primarily useful for diagnostics."""
+    if not value.startswith(_ID_PREFIX):
+        raise ValueError("encoded identifier is missing the b64_ prefix")
+    payload = value[len(_ID_PREFIX):]
+    payload += "=" * (-len(payload) % 4)
+    return base64.urlsafe_b64decode(payload).decode("utf-8")
 
 
 def poll_until(
