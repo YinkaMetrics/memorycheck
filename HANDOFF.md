@@ -2990,3 +2990,96 @@ stored values verbatim.
 External launch remains **HELD**.
 
 ---
+
+## 2026-08-05 — Live diagnostics and full Mem0 regeneration completed
+
+This entry supersedes the execution blocker in the preceding entry. The key
+was already present in the Mem0 CLI config; the fresh clone simply did not
+carry the gitignored credential file.
+
+### 1. What shipped
+
+Commit `d9da6de` promotes the completed live evidence:
+
+- `examples/report_mem0.{json,md}` now carry the regenerated report, including
+  run ID and answering-layer metadata;
+- README provenance no longer says regeneration is pending;
+- the diagnostic STATUS block records the second seven-arm execution and the
+  intermittent result; and
+- environment guidance now distinguishes default sandbox networking from an
+  explicitly approved live-provider run.
+
+Implementation remains `b81bf20`; `d25fa1b` recorded the temporary publication
+hold before the configured credential was located.
+
+### 2. Findings
+
+**Seven-arm diagnostic.** Live Mem0, SDK 2.0.14, result file
+`diagnostics/results/readd_after_delete_1785890141.json`:
+
+| Arms | Result | SEARCH units per arm |
+|---|---|---|
+| (a)-(c), same-scope per-key delete | RE_ADD_VISIBLE | 5 each |
+| (d)-(e), cross-scope per-key delete | RE_ADD_VISIBLE | 5 each |
+| (f), namespace `delete_all`, immediate write | WRITE_VISIBLE | 4 |
+| (g), namespace `delete_all`, 60s settle | WRITE_VISIBLE | 4 |
+
+Arm (f) previously returned WRITE_LOST and now returned WRITE_VISIBLE. The
+namespace-wide post-delete loss is therefore intermittent, not deterministic.
+The clean rerun does not erase the earlier observed loss; it rules out framing
+it as the outcome of every `delete_all`.
+
+**Full regeneration.** Live Mem0, SDK 2.0.14, implementation `b81bf20`, 15
+scenarios x 2 seeds, 170 operations, run ID
+`1986edd5512147dca783bc513029b4f3`. Raw files:
+`diagnostics/results/full_mem0_20260805.{json,md,log}`; promoted evidence:
+`examples/report_mem0.{json,md}`.
+
+| Check | Result |
+|---|---|
+| current_fact_accuracy | 100% (46/46) |
+| stale_reuse | 100% (10/10) — FAIL |
+| scope_leakage | 0% (0/22) |
+| deletion_residue | 0% (0/18) |
+| expiry_leak | NOT TESTED |
+| memory_utility_delta | +1.00 |
+
+Gate: **FAIL**, 10 blocking P2 findings. Seed stability: stable. Answering
+layer: quoting. Both seeds of the previously aborting scenario 012 completed;
+the largest recorded operation latency in the full-run progress output was
+2.32s, below the 30s convergence ceiling.
+
+The existing Mem0 findings are unchanged, as predicted: pack identifiers do
+not slug-collide, the run used `seeds=2`, there was no concurrency, and the
+Mem0 answering layer quotes exact stored values. Unique invocation namespaces
+prevented this run from colliding with residue from an earlier invocation.
+
+### 3. Decisions
+
+- Pinned `mem0ai` 2.0.14 for like-for-like reproduction rather than silently
+  changing the provider client and the harness in one measurement.
+- Promoted the regenerated evidence because its metrics exactly match the
+  published figures; no provider verdict or severity changed.
+- Kept the earlier failed namespace diagnostic and the new passing execution
+  side by side. Reporting only the clean rerun would hide intermittency;
+  reporting only the loss would overstate determinism.
+
+### 4. FOR STRATEGY
+
+- The frequency and trigger for intermittent post-`delete_all` write loss are
+  still unmeasured. Unique per-invocation namespaces remove that path from a
+  normal fresh run; the sentinel remains the fail-closed guard when a reset
+  actually encounters residue.
+- README and published evidence are gated-tier changes. The PR requires
+  `needs-founder-review` and must remain unmerged pending explicit approval.
+
+### 5. Next
+
+1. Push the complete branch.
+2. Open a draft PR labeled `needs-founder-review`, stating the exact public
+   claim and evidence changes.
+3. Do not merge until founder approval is recorded.
+
+External launch remains **HELD pending founder review**.
+
+---
