@@ -180,7 +180,7 @@ How the lifecycle maps onto Mem0:
 
 ### Result
 
-**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** pinned for like-for-like reproduction, executed **2026-08-05 00:43 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`, run ID `1986edd5512147dca783bc513029b4f3`. The hosted platform exposes no version or build identifier to clients, so the SDK pin and run date are the available provenance. This completed regeneration produced figures identical to the 2026-07-27 published run and the intervening reproductions.
+**Run:** Mem0 hosted platform via `api.mem0.ai` (`/v3` endpoints), SDK `mem0ai` **2.0.14** (latest release at time of run, published 2026-07-25), executed **2026-07-27 15:58 UTC**, 15 scenarios × 2 seeds, judge `deterministic-v0`. The hosted platform exposes no version or build identifier to clients, so the run date is the only pin available on the service itself. Three consecutive runs — two on 2.0.14, one on 2.0.11 — produced identical figures.
 
 ```
   current_fact_accuracy  100% (46/46)
@@ -193,7 +193,7 @@ How the lifecycle maps onto Mem0:
   GATE [fail on <= P2]: FAIL (10 blocking findings)
 ```
 
-**Provenance.** The current evidence was regenerated from implementation commit `b81bf20`, after the adapter gained invariant-10 mutation confirmation, scope identifiers became lossless, and every invocation gained a unique namespace. All 170 operations completed. The metrics are unchanged from the earlier evidence: the harness corrections removed collision and race exposure without changing the Mem0 result. The separate reset diagnostics, including their intermittent namespace-delete behaviour, are tracked in [`HANDOFF.md`](HANDOFF.md).
+**Provenance.** These figures were produced at commit `f230208`, before the adapter gained the write/delete convergence confirmation required by invariant 10. Per-scenario re-checks after that change returned identical results, and the same figures were reproduced across three runs including one on `mem0ai` 2.0.11. A later 15 × 2 execution on 2026-08-05 is recorded internally as **reported, unverified** because it lacks its own contemporaneous SEARCH-quota before/after pair. Under invariant 11, that execution is not a source for this published report. Tracked in [`HANDOFF.md`](HANDOFF.md).
 
 Mem0 holds the boundaries that carry the P1 severities: **no scope leakage in 22 opportunities and no deletion residue in 18** — deletes stopped the value influencing answers, and no user's or tenant's facts crossed into another's, including where two tenants share a `user_id` and where a fact is moved between tenants. Current-fact accuracy is perfect and every result is stable across seeds.
 
@@ -240,13 +240,14 @@ Mem0 meters two independent counters, and this adapter spends the scarcer one.
 | `SEARCH` | 1,000 per billing period | every query, plus each read used to confirm a write or delete landed |
 | `ADD` | 10,000 per billing period | one per `write` |
 
-Measured on the bundled 15-scenario pack: **~53 SEARCH units per seed**, so a
-default 2-seed run costs **~106** — roughly a tenth of a 1,000-unit period.
-Confirmation reads are the bulk of it, and they are not optional: without them
-the harness races the provider and manufactures false failures (invariant 10).
+The current adapter has a structural minimum of **91 SEARCH units per seed**:
+15 reset pre-reads, 30 write confirmations, 16 delete reads/confirmations and
+30 scenario queries. A default 2-seed run therefore costs **~182**, before any
+extra convergence polls. Confirmation reads are not optional: without them the
+harness races the provider and manufactures false failures (invariant 10).
 
 Budget accordingly if you wire this into CI. Running the full pack on every
-commit will exhaust a 1,000-unit period in ~9 runs. The intended shape is a
+commit will exhaust a 1,000-unit period in ~5 runs. The intended shape is a
 small smoke subset per commit and the full pack nightly or per release. Watch
 the `x-quota-remaining` response header; when the counter is exhausted the API
 returns `429` and the run aborts rather than reporting degraded numbers.

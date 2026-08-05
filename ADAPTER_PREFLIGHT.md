@@ -12,6 +12,22 @@ never by reading documentation.
 Record answers in `HANDOFF.md` before the first scenario. An adapter keeps
 `unverified = True` until every item has an observed answer.
 
+For every live execution, create this provenance block before interpreting
+the result:
+
+```text
+status: verified | reported, unverified
+executed_by: <person or agent identity>
+environment: <machine/runtime and network mode>
+search_quota_before: <provider-reported integer>
+search_quota_after: <provider-reported integer>
+results_file: <exact filename>
+```
+
+All four facts plus the filename are mandatory. If any is missing, the run is
+`reported, unverified`: log it internally, but do not change README, a
+published report, adapter verification status, or another gated claim from it.
+
 ---
 
 ## 1. Quota and rate model — from live response headers
@@ -26,8 +42,9 @@ incomplete every time so far.
 - [ ] What is the request rate limit, and does confirmation polling threaten it?
 
 *Why:* Mem0 meters `SEARCH` (1,000/period) separately from `ADD`
-(10,000/period). A full run costs ~106 SEARCH — about a tenth of the period —
-and confirmation reads are most of it. Zep meters ingestion credits instead, so
+(10,000/period). The current full 15 × 2 path has a structural minimum of
+~182 SEARCH — 91 per seed — and extra convergence polls can raise it. Zep
+meters ingestion credits instead, so
 the same polling is free but a request-rate ceiling applies. Two providers,
 opposite constraints; neither was guessable.
 
@@ -102,3 +119,6 @@ residue as leakage.
   project so far has been ours, not the provider's.
 - **Record what you could not test.** An untested assumption is not a passed
   one; say so in `HANDOFF.md` and keep `unverified = True`.
+- **Bracket every live run with quota observations.** Estimates are planning
+  inputs. Only the provider-reported before/after pair closes the spend and
+  qualifies the run for gated publication.

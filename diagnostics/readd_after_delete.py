@@ -19,7 +19,9 @@ failure is therefore intermittent, not a deterministic consequence of every
 `delete_all`. The earlier loss remains valid evidence that it can happen; the
 clean rerun does not erase it. The full 15 x 2 regeneration immediately after
 this diagnostic completed all 170 operations under a unique invocation
-namespace; see HANDOFF.md.
+namespace. That run did not record its own quota before/after pair, so under
+invariant 11 it is reported, unverified and cannot update gated evidence; see
+HANDOFF.md.
 
 **The combined result: (f) failed once and passed once; (g) passed twice.**
 Every per-key arm passed. A write immediately after `delete_all` can be lost,
@@ -111,9 +113,11 @@ versus namespace delete_all. In particular a clean sweep of (a)-(c) does
 **not** license "012 refuted" — it licenses only "not reproduced same-scope,
 with a per-key delete".
 
-    python diagnostics/readd_after_delete.py             # prints cost, then asks
-    python diagnostics/readd_after_delete.py --yes       # no prompt
     python diagnostics/readd_after_delete.py --dry-run   # cost only, spends nothing
+    python diagnostics/readd_after_delete.py \
+      --executed-by "<identity>" --environment "<machine/runtime/network>"
+    python diagnostics/readd_after_delete.py --yes \
+      --executed-by "<identity>" --environment "<machine/runtime/network>"
 
 The key is read from MEM0_API_KEY, falling back to ~/.mem0/config.json, so no
 export is needed. Results are written to diagnostics/results/ as well as
@@ -376,10 +380,18 @@ def main() -> int:
     ap.add_argument("--yes", action="store_true", help="skip the cost prompt")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the cost estimate and exit without spending")
+    ap.add_argument(
+        "--executed-by", default=os.environ.get("MEMORYCHECK_EXECUTED_BY"),
+        help="person or agent identity executing the live run",
+    )
+    ap.add_argument(
+        "--environment", default=os.environ.get("MEMORYCHECK_RUN_ENVIRONMENT"),
+        help="machine/runtime and network mode used for the live run",
+    )
     args = ap.parse_args()
 
-    # Four quota probes (one up front, one either side of each arm) are
-    # themselves SEARCH calls; count them so the estimate is not optimistic.
+    # Quota probes (one up front, one either side of each arm) are themselves
+    # SEARCH calls; count them so the estimate is not optimistic.
     probes = 1 + 2 * len(COST_ESTIMATE)
     total = sum(COST_ESTIMATE.values()) + probes
     print("Estimated SEARCH cost (worst case, the scarce counter):")
@@ -392,6 +404,14 @@ def main() -> int:
         print("dry run: nothing spent")
         return 0
 
+    if not args.executed_by or not args.environment:
+        print(
+            "Live-run provenance required: pass --executed-by and --environment "
+            "(or set MEMORYCHECK_EXECUTED_BY and MEMORYCHECK_RUN_ENVIRONMENT).",
+            file=sys.stderr,
+        )
+        return 2
+
     api_key = resolve_api_key()
     if not api_key:
         print("No Mem0 key: set MEM0_API_KEY or populate ~/.mem0/config.json.",
@@ -403,16 +423,44 @@ def main() -> int:
         print('Mem0 SDK missing. pip install "mem0ai>=2.0.14"', file=sys.stderr)
         return 2
 
-    remaining = quota_remaining(api_key)
-    if remaining is not None and remaining >= 0:
-        print(f"SEARCH quota remaining now: {remaining}")
-        if remaining < total:
-            print(f"REFUSING TO RUN: need ~{total}, have {remaining}. A run that "
+    stamp = int(time.time())
+    out_dir = Path(__file__).resolve().parent / "results"
+    out_dir.mkdir(exist_ok=True)
+    out = out_dir / f"readd_after_delete_{stamp}.json"
+
+    quota_before = quota_remaining(api_key)
+    initial_report = {
+        "run_at_epoch": stamp,
+        "provenance": {
+            "status": "reported, unverified",
+            "executed_by": args.executed_by,
+            "environment": args.environment,
+            "search_quota_before": quota_before,
+            "search_quota_after": None,
+            "results_file": str(out),
+        },
+        "state": "started",
+        "results": [],
+    }
+    # Persist the provenance before mutations. If the process is interrupted,
+    # the partial record remains explicitly unverified instead of disappearing.
+    out.write_text(json.dumps(initial_report, indent=2) + "\n")
+
+    if quota_before is not None and quota_before >= 0:
+        print(f"SEARCH quota remaining now: {quota_before}")
+        if quota_before < total:
+            initial_report["state"] = "refused: insufficient SEARCH quota"
+            out.write_text(json.dumps(initial_report, indent=2) + "\n")
+            print(f"REFUSING TO RUN: need ~{total}, have {quota_before}. A run that "
                   "dies partway proves nothing and spends the rest.", file=sys.stderr)
+            print(f"provenance written to {out}")
             return 3
     if not args.yes:
         if input(f"Spend ~{total} SEARCH units? [y/N] ").strip().lower() != "y":
             print("aborted; nothing spent beyond the quota probe")
+            initial_report["state"] = "aborted by operator after quota probe"
+            out.write_text(json.dumps(initial_report, indent=2) + "\n")
+            print(f"provenance written to {out}")
             return 0
 
     # Pass the resolved key explicitly. MemoryClient() reads MEM0_API_KEY from
@@ -421,7 +469,6 @@ def main() -> int:
     # probe and then die here with "Mem0 API Key not provided" — after the
     # operator had already confirmed the spend.
     client = MemoryClient(api_key=api_key)
-    stamp = int(time.time())
     # (name, first value, second value, extra settle, cross-scope)
     plan = [
         ("a_identical", f"wintergreen-{stamp}", f"wintergreen-{stamp}", 0.0, False),
@@ -440,6 +487,7 @@ def main() -> int:
     ]
 
     results = []
+    quota_after = None
     for name, first, second, settle, cross in plan:
         print(f"\n--- arm {name}{' (cross-scope)' if cross else ''} ---")
         print(f"    expected SEARCH cost, worst case: ~{COST_ESTIMATE[name]} units")
@@ -448,6 +496,7 @@ def main() -> int:
         target = f"mc_diag__{name}_{stamp}__scope_b" if cross else None
         result = Arm(client, name, source, target).run(first, second, settle)
         after = quota_remaining(api_key)
+        quota_after = after
         if before is not None and after is not None and before >= 0 and after >= 0:
             result["search_units_spent"] = before - after
         results.append(result)
@@ -464,6 +513,7 @@ def main() -> int:
             [f"residue-{i}-{stamp}" for i in range(_RESIDUE_N)],
             f"probe-{name}-{stamp}", settle)
         after = quota_remaining(api_key)
+        quota_after = after
         if before is not None and after is not None and before >= 0 and after >= 0:
             result["search_units_spent"] = before - after
         results.append(result)
@@ -557,18 +607,31 @@ def main() -> int:
     print("\nNo conclusion may be published from a single execution of this "
           "script. Re-run to establish stability first.")
 
-    out_dir = Path(__file__).resolve().parent / "results"
-    out_dir.mkdir(exist_ok=True)
-    out = out_dir / f"readd_after_delete_{stamp}.json"
+    provenance_verified = all(
+        isinstance(value, int) and value >= 0
+        for value in (quota_before, quota_after)
+    )
+    provenance = {
+        "status": "verified" if provenance_verified else "reported, unverified",
+        "executed_by": args.executed_by,
+        "environment": args.environment,
+        "search_quota_before": quota_before,
+        "search_quota_after": quota_after,
+        "results_file": str(out),
+    }
     out.write_text(json.dumps({
         "run_at_epoch": stamp,
+        "provenance": provenance,
+        "state": "completed",
         "poll_interval_s": POLL_INTERVAL,
         "confirm_timeout_s": CONFIRM_TIMEOUT,
         "extra_settle_s": EXTRA_SETTLE,
         "estimated_search_units": total,
         "results": results,
         "caveat": "single execution; not a finding until reproduced",
-    }, indent=2))
+    }, indent=2) + "\n")
+    print(f"provenance status: {provenance['status']}")
+    print(f"SEARCH quota before/after: {quota_before} -> {quota_after}")
     print(f"results written to {out}")
     return 0
 

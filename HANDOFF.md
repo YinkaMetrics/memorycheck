@@ -3084,6 +3084,104 @@ External launch remains **HELD pending founder review**.
 
 ---
 
+## 2026-08-05 — Live-run quota reconciliation and provenance gate
+
+### 1. What changed
+
+- Added invariant 11: every live-provider execution must contemporaneously
+  record `executed_by`, `environment`, SEARCH quota before, SEARCH quota after,
+  and the exact results filename.
+- A run missing any field is **reported, unverified**. It may be retained in
+  this internal handoff, but it cannot update README, `examples/report_*`, an
+  adapter verification flag, or another gated claim.
+- `diagnostics/readd_after_delete.py` now refuses a live execution without the
+  executor and environment, writes the initial provenance record before any
+  mutation, and records the quota pair and result filename in its JSON output.
+- Withdrew the 2026-08-05 evidence promotion from README and
+  `examples/report_mem0.*`. The published artifact remains the 2026-07-27 run;
+  the later execution remains available internally as reported, unverified.
+- Corrected the documented current Mem0 cost from the historical ~106 estimate
+  to a structural minimum of 91 SEARCH per seed, or 182 for 15 × 2, before
+  extra convergence polls.
+
+### 2. Quota accounting
+
+The founder-reported account movement is **885 → 599 = 286 SEARCH units**.
+The surviving artifacts support this reconciliation:
+
+| Bucket | SEARCH units | Evidence and limit |
+|---|---:|---|
+| Seven-arm diagnostic | 41 | 33 in per-arm header deltas, plus 7 before-arm probes and the initial quota probe |
+| Full 15 × 2 execution | at least 182 | structural minimum: 30 reset pre-reads, 60 write confirmations, 32 delete reads/confirmations, and 60 scenario queries |
+| Unallocated before/around the first recorded checkpoint | at most 63 | arithmetic remainder; no complete run-specific quota pair exists, so this cannot be assigned more precisely |
+| **Total** | **286** | 41 + 182 + up to 63 |
+
+The diagnostic's first recorded provider checkpoint was **822 remaining**.
+Its result file reports arm deltas `5, 5, 5, 5, 5, 4, 4`; those 33 units
+include the seven after-arm probes, while the seven before-arm probes and the
+initial probe bring the diagnostic to 41.
+
+No surviving artifact evidences a repeat full 15 × 2 run in this work. The
+full-run log contains no residue-reset/sentinel sequence because the unique
+run namespace started empty; its 30 reset pre-reads are already included in
+the 182 minimum. No separate post-checkpoint development run is evidenced.
+Any extra convergence poll, standalone quota probe, or earlier development
+call must therefore remain inside the unallocated remainder rather than being
+invented as a specific cause.
+
+### 3. Provenance status of today's live executions
+
+**Seven-arm diagnostic**
+
+```text
+status: reported, unverified
+executed_by: Codex (OpenAI), on the founder's instruction
+environment: Codex desktop on macOS; local writable clone; explicitly approved live network access
+search_quota_before: no run-start value recorded; first provider checkpoint was 822 after the initial probe
+search_quota_after: not contemporaneously recorded as a run-level value
+results_file: diagnostics/results/readd_after_delete_1785890141.json
+```
+
+**Full 15 × 2 execution**
+
+```text
+status: reported, unverified
+executed_by: Codex (OpenAI), on the founder's instruction
+environment: Codex desktop on macOS; local writable clone; explicitly approved live network access
+search_quota_before: not contemporaneously recorded for this run
+search_quota_after: not contemporaneously recorded for this run; 599 is only the founder-reported final account value across the combined work
+results_file: diagnostics/results/full_mem0_20260805.json (with matching .md and .log)
+```
+
+Both executions are retained for investigation, but neither qualifies to
+change a gated file under invariant 11.
+
+### 4. FOR STRATEGY
+
+- The 63-unit maximum remainder is closed as **unallocated, unverified**, not
+  silently attributed to repeat, sentinel, or development runs that the
+  artifacts do not prove. Do not spend more quota merely to reconstruct it.
+- The next live run must begin only after the five-field provenance record is
+  prepared and must finish with the provider-reported quota pair in the same
+  results artifact. That single artifact should settle both evidentiary status
+  and spend without a follow-up reconstruction.
+- Existing Mem0 findings are unaffected: the scenario-pack identifiers do not
+  slug-collide, the execution used `seeds=2`, there was no concurrency, and
+  the Mem0 answering layer is quoting. This is an evidence-provenance hold,
+  not a change to the previously published metric values.
+- README/report edits remain gated-tier and PR #10 must retain
+  `needs-founder-review`; do not merge without explicit founder approval.
+
+### 5. Next
+
+1. Run offline validation only; do not spend additional Mem0 quota.
+2. Push the provenance rule and accounting to draft PR #10.
+3. Confirm the PR stays draft, labeled `needs-founder-review`, and unmerged.
+
+External launch remains **HELD pending founder review**.
+
+---
+
 ## 2026-08-05 — Draft PR #10 opened; founder gate active
 
 ### 1. What shipped

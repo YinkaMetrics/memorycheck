@@ -3,21 +3,17 @@
     "name": "memorycheck",
     "version": "0.1.0"
   },
-  "generated_at": "2026-08-05T00:43:20+00:00",
-  "run_id": "1986edd5512147dca783bc513029b4f3",
+  "generated_at": "2026-07-27T15:58:06+00:00",
   "adapter": "mem0",
   "adapter_unverified": false,
   "adapter_unverified_note": "",
-  "answering_layer": "quoting",
-  "limitations": [],
   "judge": "deterministic-v0",
   "seeds": 2,
   "scenarios": 15,
   "gate": {
     "fail_on": "P2",
     "verdict": "FAIL",
-    "blocking_findings": 10,
-    "inconclusive_reasons": []
+    "blocking_findings": 10
   },
   "metrics": {
     "current_fact_accuracy": {
