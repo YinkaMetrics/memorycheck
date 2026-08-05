@@ -2188,6 +2188,7 @@ uninterpretable against the (a) baseline. Say if you want it the other way.
 External launch remains **HELD**.
 
 ---
+
 ## 2026-08-03 — Arms (a)-(c) executed: clean sweep, and it settles less than it looks
 
 **Corrects the entry above.** That entry states "Arms (a)-(c) have never been
@@ -2685,6 +2686,7 @@ worth knowing.
 External launch remains **HELD**.
 
 ---
+
 ## 2026-08-04 — Founder approval recorded; arm (f) FAILED, the mechanism is real
 
 ### 1. What shipped
@@ -2889,6 +2891,94 @@ path. The next run answers it directly.
    the op #26 inference.
 2. Stability re-runs of the arms before any of it is treated as settled.
 3. Founder ruling before any published text changes.
+
+External launch remains **HELD**.
+
+---
+
+## 2026-08-05 — External review fixes: the release gate now fails closed
+
+### 1. What shipped
+
+Implementation commit `b81bf20` addresses all five accepted review findings:
+
+- `INCONCLUSIVE` is a gate verdict distinct from PASS and check-level
+  NOT_TESTED. Paraphrasing clean-absence checks, unverified adapters, and runs
+  where every metric is NOT_TESTED cannot go green; the CLI exits non-zero.
+- `--seeds` rejects values below 1 at argument parsing, and the library guard
+  enforces the same floor.
+- the HTTP pilot confirms accepted writes and deletes by polling `/query` for
+  the exact transition with a bounded timeout. `doctor` retains its own
+  diagnostic polling so it can still distinguish bad response shape,
+  non-convergence and soft-delete residue.
+- Mem0 and LangGraph identifiers use reversible URL-safe base64 encoding.
+  `tenant/a`, `tenant-a`, `tenant.a` and `tenant a` map to distinct namespaces.
+- every suite invocation generates one unique `run_id`; it is included in
+  every scenario and baseline namespace and stamped into JSON, Markdown and
+  terminal report headers.
+
+The README is touched, so this is a gated-tier change. The branch must carry
+`needs-founder-review` and remain unmerged until the founder approves the
+public wording.
+
+### 2. Findings
+
+No live provider behaviour was observed in this session.
+
+Local verification after the fixes:
+
+- all 15 scenarios validate with 0 warnings;
+- offline suite: 87 passed, 4 credential-gated tests skipped;
+- full local strict regeneration: 15 scenarios x 2 seeds, PASS, 0 blocking
+  findings, report `run_id=4acd8fda77aa4c068928f63347bd92a3`;
+- naive control: FAIL with 16 blocking findings at one seed, exit 1;
+- `--seeds 0`: rejected by argparse, exit 2;
+- eventually-consistent HTTP test: delayed write and delete both converge
+  before the runner advances; timeout aborts instead of producing a score.
+
+The requested live diagnostics and full Mem0 regeneration did **not** run.
+`MEM0_API_KEY` is absent from this environment. A read-only reachability probe
+outside the sandbox returned HTTP 200, so the blocker is the missing
+credential, not current endpoint reachability. No published evidence artifact
+was regenerated and no provider figure was changed.
+
+The existing Mem0 findings are unaffected by these harness corrections: the
+scenario-pack identifiers used in those runs do not slug-collide, the runs
+used `seeds=2`, there was no concurrency, and the Mem0 answering layer quotes
+stored values verbatim.
+
+### 3. Decisions
+
+- Exact violations still take precedence: a paraphrasing run with a literal
+  matched violation is FAIL; otherwise absence cannot be evidenced and the
+  gate is INCONCLUSIVE.
+- HTTP convergence may inspect the shim's `retrieved` field to confirm a
+  mutation arrived, including under paraphrase. The oracle remains unchanged
+  on invariant 2 and grades only the separate scenario answer.
+- Identifier encoding is centralised in `adapters/base.py` so native adapters
+  cannot drift back to mutually incompatible slug rules.
+- A fresh `run_id` is created at `run_suite`, not per scenario, so one report
+  and all of its namespaces share the same invocation identity.
+
+### 4. FOR STRATEGY
+
+- Founder review is required for the README changes: the public honesty model
+  now names INCONCLUSIVE, states that paraphrasing and unverified adapters exit
+  non-zero, corrects Mem0 namespace isolation, and documents HTTP `/query`
+  convergence.
+- Publication remains held until the live diagnostics and full Mem0 15 x 2
+  regeneration run in an environment with a credential. The existing choice
+  of Mem0 SDK version/pin for that regeneration remains a founder call.
+
+### 5. Next
+
+1. Supply `MEM0_API_KEY` in an egress-capable environment and rerun the
+   diagnostics plus the full Mem0 15 x 2 regeneration, capturing stderr and
+   report artifacts with their `run_id`.
+2. Promote those results into this log and confirm the existing Mem0 metrics
+   remain unchanged before altering any published evidence.
+3. Obtain founder approval on the `needs-founder-review` draft PR; only then
+   merge and publish to `main`.
 
 External launch remains **HELD**.
 
