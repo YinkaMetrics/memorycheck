@@ -3083,3 +3083,41 @@ prevented this run from colliding with residue from an earlier invocation.
 External launch remains **HELD pending founder review**.
 
 ---
+
+## 2026-08-05 — Draft PR #10 opened; founder gate active
+
+### 1. What shipped
+
+Commits through `c112102` are pushed on
+`agent/fail-closed-release-gate`. Draft PR
+`https://github.com/YinkaMetrics/memorycheck/pull/10` targets `main` and carries
+`needs-founder-review`.
+
+### 2. Findings
+
+No new provider measurement. The live diagnostic and full regeneration are
+recorded in the preceding entry. GitHub read-back confirmed the PR is OPEN,
+DRAFT and unmerged; both CI jobs started and were still in progress at the
+handoff point.
+
+### 3. Decisions
+
+- Stopped at the gated publication boundary. Opening a draft for founder
+  review is authorised; merging the README and published evidence changes is
+  not.
+
+### 4. FOR STRATEGY
+
+- Founder approval is required before merge. Review should focus on the new
+  INCONCLUSIVE public contract, corrected namespace claim, intermittent reset
+  wording, and regenerated Mem0 provenance.
+
+### 5. Next
+
+1. Let CI finish and address any failure before approval.
+2. Founder reviews PR #10 and records approval or requested changes.
+3. Merge only after explicit approval; external launch otherwise stays held.
+
+External launch remains **HELD pending founder review**.
+
+---
