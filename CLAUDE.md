@@ -86,6 +86,19 @@ Status: v0.1, built in public. `pytest -q` must stay green after every change.
     just-mutated value (or its absence) with a bounded timeout. That poll is
     mutation confirmation only; the oracle never grades it. Non-convergence
     aborts rather than being laundered into PASS or scored as a provider bug.
+11. **Live-run provenance is a publication gate.** From adoption of this rule,
+    every live-provider run
+    records four facts contemporaneously: who executed it, the execution
+    environment, the provider's SEARCH quota immediately before and after,
+    and the results filename. Missing any field makes the run **reported,
+    unverified**. It may be logged internally, but it must not update README,
+    `examples/report_*`, clear an adapter's `unverified` flag, or support any
+    other gated claim. Estimates and reconstructed quota arithmetic are useful
+    diagnostics, never substitutes for the before/after pair. The 2026-08-05
+    Mem0 evidence is a documented legacy exception: it was verified
+    retrospectively by the founder's independent live counter reading of 599
+    against approximately 885 before the work. Its provenance was not
+    self-recorded at execution time — the reason this prospective rule exists.
 
 ## Conventions
 
@@ -156,8 +169,12 @@ stops short has not finished its task and must say which of the four steps it
 stopped at. Blocked work still gets an entry: the blocker, what was
 established anyway, and what remains unverified.
 
-**Any diagnostic run executed outside this environment must be promoted into
-`HANDOFF.md` by hand, citing its results filename.** `diagnostics/results/` is
+**Every live-provider run after adoption of invariant 11, here or elsewhere,
+must be promoted into
+`HANDOFF.md` with its complete invariant-11 provenance block:** executor,
+environment, SEARCH quota before, SEARCH quota after, and results filename.
+If one is absent, label it **reported, unverified** and do not change a gated
+file from it. `diagnostics/results/` is
 gitignored by design — those are open investigations whose output is not
 publishable until ruled on. The cost of that choice is that a run done on a
 laptop leaves no commit, no artefact and no trace here, so it is invisible to

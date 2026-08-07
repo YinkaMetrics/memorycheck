@@ -3084,6 +3084,153 @@ External launch remains **HELD pending founder review**.
 
 ---
 
+## 2026-08-05 — PR #10 merge and retrospective provenance review
+
+### 1. What changed
+
+GitHub read-back at this handoff found PR #10 already merged at 01:09 UTC at
+head `a5aad4e`. The quota reconciliation and invariant-11 process rule are in
+later commits on the follow-up branch.
+
+### 2. Findings
+
+The merge was an external state change, not an action taken in this task. Its
+published 2026-08-05 evidence is **verified retrospectively by quota
+reconciliation; provenance was not self-recorded at execution time — the
+reason the rule now exists.** The founder independently read Mem0's live
+SEARCH counter at 599 on 2026-08-05, against approximately 885 before the
+work. Mem0 owns that counter outside the repository; repository code cannot
+write it. No new provider call was made during this documentation review.
+
+### 3. Decisions
+
+- Do not rewrite, revert, or otherwise mutate the completed merge without
+  explicit founder authority.
+- Open the isolated post-merge documentation/process correction as a new draft
+  PR from `agent/fail-closed-release-gate`, labeled `needs-founder-review`.
+- Do not merge the follow-up PR automatically.
+
+### 4. FOR STRATEGY
+
+The 2026-08-05 evidence on `main` remains verified. The process gap is that
+the run did not self-record its provenance contemporaneously; apply invariant
+11 prospectively so the next run does not require retrospective reconciliation.
+
+### 5. Next
+
+1. Open and label the follow-up draft PR.
+2. Confirm it retains the verified 2026 evidence and contains only provenance,
+   accounting, cost and process-rule corrections.
+3. Await explicit founder review; do not merge.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Live-run quota reconciliation and provenance gate
+
+### 1. What changed
+
+- Added invariant 11: every live-provider execution must contemporaneously
+  record `executed_by`, `environment`, SEARCH quota before, SEARCH quota after,
+  and the exact results filename.
+- A run missing any field is **reported, unverified**. It may be retained in
+  this internal handoff, but it cannot update README, `examples/report_*`, an
+  adapter verification flag, or another gated claim. This applies to runs
+  executed after the rule's adoption.
+- `diagnostics/readd_after_delete.py` now refuses a live execution without the
+  executor and environment, writes the initial provenance record before any
+  mutation, and records the quota pair and result filename in its JSON output.
+- Retained the 2026-08-05 evidence in README and `examples/report_mem0.*`.
+  It is verified retrospectively by the founder's independent live SEARCH
+  counter reading; its provenance was not self-recorded at execution time.
+- Corrected the documented current Mem0 cost from the historical ~106 estimate
+  to a structural minimum of 91 SEARCH per seed, or at least 182 for 15 × 2,
+  before extra convergence polls.
+
+### 2. Quota accounting
+
+The founder independently took a live Mem0 SEARCH counter reading of **599**
+on 2026-08-05, against approximately **885 before the work**: a movement of
+approximately 286 SEARCH units. Mem0's counter is external to this repository
+and cannot be written by repository code. The surviving artifacts support this
+reconciliation:
+
+| Bucket | SEARCH units | Evidence and limit |
+|---|---:|---|
+| Seven-arm diagnostic | 41 | 33 in per-arm header deltas, plus 7 before-arm probes and the initial quota probe |
+| Full 15 × 2 execution | at least 182 | structural minimum: 30 reset pre-reads, 60 write confirmations, 32 delete reads/confirmations, and 60 scenario queries |
+| Unallocated before/around the first recorded checkpoint | at most 63 | arithmetic remainder; no complete run-specific quota pair exists, so this cannot be assigned more precisely |
+| **Total** | **286** | 41 + 182 + up to 63 |
+
+The diagnostic's first recorded provider checkpoint was **822 remaining**.
+Its result file reports arm deltas `5, 5, 5, 5, 5, 4, 4`; those 33 units
+include the seven after-arm probes, while the seven before-arm probes and the
+initial probe bring the diagnostic to 41.
+
+No surviving artifact evidences a repeat full 15 × 2 run in this work. The
+full-run log contains no residue-reset/sentinel sequence because the unique
+run namespace started empty; its 30 reset pre-reads are already included in
+the 182 minimum. No separate post-checkpoint development run is evidenced.
+Any extra convergence poll, standalone quota probe, or earlier development
+call must therefore remain inside the unallocated remainder rather than being
+invented as a specific cause.
+
+### 3. Provenance status of today's live executions
+
+**Seven-arm diagnostic**
+
+```text
+status: verified retrospectively by quota reconciliation; provenance not self-recorded at execution time — the reason the rule now exists
+executed_by: Codex (OpenAI), on the founder's instruction
+environment: Codex desktop on macOS; local writable clone; explicitly approved live network access
+search_quota_before: approximately 885 before the combined work, recorded by the founder
+search_quota_after: 599, independently read live from Mem0 by the founder on 2026-08-05
+results_file: diagnostics/results/readd_after_delete_1785890141.json
+```
+
+**Full 15 × 2 execution**
+
+```text
+status: verified retrospectively by quota reconciliation; provenance not self-recorded at execution time — the reason the rule now exists
+executed_by: Codex (OpenAI), on the founder's instruction
+environment: Codex desktop on macOS; local writable clone; explicitly approved live network access
+search_quota_before: approximately 885 before the combined work, recorded by the founder
+search_quota_after: 599, independently read live from Mem0 by the founder on 2026-08-05
+results_file: diagnostics/results/full_mem0_20260805.json (with matching .md and .log)
+```
+
+The combined live work is verified retrospectively by the independent provider
+counter reconciliation. It qualifies as evidence; the missing self-recorded
+run-level pair is a process deficiency and the reason invariant 11 now applies
+prospectively.
+
+### 4. FOR STRATEGY
+
+- The 63-unit maximum remainder is closed as **unallocated**, not
+  silently attributed to repeat, sentinel, or development runs that the
+  artifacts do not prove. Do not spend more quota merely to reconstruct it.
+- The next live run must begin only after the five-field provenance record is
+  prepared and must finish with the provider-reported quota pair in the same
+  results artifact. That single artifact should settle both evidentiary status
+  and spend without a follow-up reconstruction.
+- Existing Mem0 findings are unaffected: the scenario-pack identifiers do not
+  slug-collide, the execution used `seeds=2`, there was no concurrency, and
+  the Mem0 answering layer is quoting. The evidence remains verified and the
+  metric values remain unchanged.
+- README/report edits remain gated-tier and PR #11 must retain
+  `needs-founder-review`; do not merge without explicit founder approval.
+
+### 5. Next
+
+1. Run offline validation only; do not spend additional Mem0 quota.
+2. Push the corrected provenance rule and accounting to draft PR #11.
+3. Confirm the PR stays draft, labeled `needs-founder-review`, and unmerged.
+
+External launch remains **HELD pending founder review**.
+
+---
+
 ## 2026-08-05 — Draft PR #10 opened; founder gate active
 
 ### 1. What shipped
@@ -3117,6 +3264,117 @@ handoff point.
 1. Let CI finish and address any failure before approval.
 2. Founder reviews PR #10 and records approval or requested changes.
 3. Merge only after explicit approval; external launch otherwise stays held.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Current publication state after PR #10 merge
+
+### 1. What shipped
+
+PR #10 merged at head `a5aad4e`. The later provenance correction is pushed at
+`e270191` and is not in `main`.
+
+### 2. Findings
+
+No new provider measurement and no additional quota spend. The detailed
+286-unit reconciliation and retrospective-verification provenance blocks are
+in the entries above.
+
+### 3. Decisions
+
+Preserve the completed merge and route the prospective provenance rule and
+customer-facing cost correction through a separate draft PR with
+`needs-founder-review`; do not merge it automatically.
+
+### 4. FOR STRATEGY
+
+Treat the 2026-08-05 live evidence on `main` as **verified retrospectively by
+quota reconciliation; provenance not self-recorded at execution time — the
+reason the rule now exists.**
+
+### 5. Next
+
+Open the isolated follow-up draft, confirm its scope and gate, then await
+explicit founder review.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Follow-up PR #11 CI repair
+
+### 1. What shipped
+
+Draft PR #11 opened with `needs-founder-review`. Its first CI run failed only
+because the new subprocess tests exercised the diagnostic in the base install,
+while `httpx` was imported at module load despite being an optional Mem0-path
+dependency.
+
+### 2. Findings
+
+The provenance checks themselves behaved correctly locally. CI failed before
+reaching them with `ModuleNotFoundError: httpx`; no provider call was possible
+and no quota was spent.
+
+### 3. Decisions
+
+Move the optional `httpx` import into the live quota-probe function. Dry-run
+and fail-closed provenance validation must work in the base install, while an
+actual Mem0 run continues to use the dependency supplied by the Mem0 extra.
+
+### 4. FOR STRATEGY
+
+This is a packaging boundary correction only. It does not alter the quota
+reconciliation, provenance ruling, published metrics, or founder gate.
+
+### 5. Next
+
+Push the repair, confirm PR #11 CI passes, and leave the PR draft and unmerged.
+
+External launch remains **HELD pending founder review**.
+
+---
+
+## 2026-08-05 — Founder confirms retrospective verification
+
+### 1. What changed
+
+Corrected HANDOFF, README, the published Mem0 report framing and PR #11 to
+retain the 2026-08-05 evidence as verified. Removed the proposed evidence
+rollback. Invariant 11 remains as a prospective self-recording requirement.
+
+### 2. Findings
+
+The evidence is **verified retrospectively by quota reconciliation; provenance
+not self-recorded at execution time — the reason the rule now exists.** The
+founder independently read Mem0's live SEARCH quota at **599** on 2026-08-05,
+against approximately **885 before the work**. That approximately 286-unit
+movement is consistent with 41 for the seven-arm diagnostic, at least 182 for
+the full 15 × 2, and at most 63 unallocated. Mem0's counter is external to the
+repository and cannot be written by repository code.
+
+### 3. Decisions
+
+- Keep the regenerated 2026-08-05 report and run ID
+  `1986edd5512147dca783bc513029b4f3` as the current evidence.
+- State the customer-facing full-run cost as **at least 182 SEARCH** under
+  invariant 10, not the historical ~106 estimate.
+- Require future live runs to self-record executor, environment, quota pair
+  and exact results filename; retrospective verification is not the default
+  operating procedure.
+
+### 4. FOR STRATEGY
+
+This correction changes provenance framing, not provider findings. Existing
+Mem0 results remain unaffected: identifiers do not slug-collide, seeds=2, no
+concurrency, and a quoting answering layer.
+
+### 5. Next
+
+Update draft PR #11, rerun offline validation and CI, retain
+`needs-founder-review`, and do not merge without explicit approval.
 
 External launch remains **HELD pending founder review**.
 

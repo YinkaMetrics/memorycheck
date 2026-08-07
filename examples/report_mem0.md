@@ -12,13 +12,15 @@ SDK `mem0ai` **2.0.14**, pinned for a like-for-like reproduction, executed
 build identifier to clients, so the SDK pin and run date are the available
 provenance.
 
-**Provenance.** This is a completed 15 × 2 regeneration after write/delete
+**Provenance.** This completed 15 × 2 regeneration followed write/delete
 convergence confirmation, lossless scope identifiers and unique invocation
-namespaces were added. All 170 operations completed. Its figures are identical
-to the 2026-07-27 published run and the intervening reproductions: current-fact
-accuracy 46/46, stale reuse 10/10, scope leakage 0/22 and deletion residue
-0/18. See `HANDOFF.md` for the separate reset diagnostic history; this fresh
-run namespace did not need to delete residue from an earlier invocation.
+namespaces. All 170 operations completed. It is **verified retrospectively by
+quota reconciliation; provenance was not self-recorded at execution time — the
+reason invariant 11 now exists.** The founder independently read Mem0's live
+SEARCH counter at **599** on 2026-08-05, against approximately **885** before
+the work. The 286-unit movement is consistent with 41 for the diagnostic, at
+least 182 for this full run, and at most 63 unallocated. Mem0's counter is
+outside this repository and cannot be written by it. See `HANDOFF.md`.
 
 **What the stale_reuse result is not.** It is not a report that Mem0 fails to
 overwrite corrected facts. That is documented, intended design — Mem0's README,
